@@ -1,0 +1,11 @@
+{
+  "name": "fitso-server",
+  "version": "1.0.0",
+  "description": "Fitso backend server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {}
+}

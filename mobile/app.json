@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Fitso",
+    "slug": "fitso",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "fitso",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0A0A0C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fitso.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0A0A0C"
+      },
+      "package": "com.fitso.app"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
