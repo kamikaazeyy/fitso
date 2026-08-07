@@ -21,6 +21,7 @@ import {
 } from '@/api/wger';
 import { useWorkout } from '@/context/WorkoutContext';
 import { EmptyState } from '@/components/EmptyState';
+import { ErrorState } from '@/components/ErrorState';
 
 const PAGE_LIMIT = 50;
 
@@ -97,6 +98,7 @@ export default function ExercisePickerScreen() {
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [categories, setCategories] = useState<WgerCategory[]>([]);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
 
   const [allResults, setAllResults] = useState<WgerExerciseInfo[]>([]);
   const [count, setCount] = useState(0);
@@ -111,11 +113,22 @@ export default function ExercisePickerScreen() {
   }, [query]);
 
   // Load categories once
-  useEffect(() => {
-    getExerciseCategories()
-      .then(setCategories)
-      .catch(() => setCategories([]));
+  const loadCategories = useCallback(async () => {
+    setCategoriesError(null);
+    try {
+      setCategories(await getExerciseCategories());
+    } catch (err) {
+      console.error('Failed to load exercise categories:', err);
+      setCategories([]);
+      setCategoriesError(
+        err instanceof Error ? err.message : 'Failed to load exercise categories'
+      );
+    }
   }, []);
+
+  useEffect(() => {
+    loadCategories();
+  }, [loadCategories]);
 
   // Reset results when category or query changes, then fetch first page
   useEffect(() => {
@@ -140,6 +153,7 @@ export default function ExercisePickerScreen() {
         setAllResults((prev) => (pageOffset === 0 ? data.results : [...prev, ...data.results]));
         setCount(data.count);
       } catch (err) {
+        console.error('Failed to load exercises:', err);
         setError(err instanceof Error ? err.message : 'Failed to load exercises');
       } finally {
         setLoading(false);
@@ -208,6 +222,16 @@ export default function ExercisePickerScreen() {
       </View>
 
       {/* Categories */}
+      {categoriesError ? (
+        <View className="px-4 mb-3 flex-row items-center justify-between">
+          <Text className="text-[#A0A0A0] text-xs flex-1 pr-3" numberOfLines={2}>
+            Categories unavailable: {categoriesError}
+          </Text>
+          <TouchableOpacity onPress={loadCategories} activeOpacity={0.7}>
+            <Text className="text-[#E63946] text-xs font-semibold">Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       {categories.length > 0 ? (
         <View className="px-4 mb-3">
           <FlatList
@@ -241,12 +265,8 @@ export default function ExercisePickerScreen() {
       <View className="flex-1 px-4">
         {loading && allResults.length === 0 ? (
           <Loader />
-        ) : error ? (
-          <EmptyState
-            icon="warning-outline"
-            title="Something went wrong"
-            subtitle={error}
-          />
+        ) : error && allResults.length === 0 ? (
+          <ErrorState message={error} onRetry={() => loadPage(0, selectedCategory)} />
         ) : visibleResults.length === 0 ? (
           <EmptyState
             icon="barbell-outline"
@@ -273,7 +293,20 @@ export default function ExercisePickerScreen() {
             }}
             onEndReachedThreshold={0.5}
             ListFooterComponent={
-              loading ? <ActivityIndicator color="#E63946" className="py-4" /> : null
+              loading ? (
+                <ActivityIndicator color="#E63946" className="py-4" />
+              ) : error ? (
+                <TouchableOpacity
+                  onPress={() => loadPage(offset, selectedCategory)}
+                  activeOpacity={0.7}
+                  className="py-4 items-center"
+                >
+                  <Text className="text-[#A0A0A0] text-xs text-center">
+                    Couldn't load more exercises: {error}
+                  </Text>
+                  <Text className="text-[#E63946] text-xs font-semibold mt-1">Tap to retry</Text>
+                </TouchableOpacity>
+              ) : null
             }
           />
         )}

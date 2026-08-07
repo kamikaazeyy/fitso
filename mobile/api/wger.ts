@@ -95,16 +95,59 @@ export function getMainImage(info: WgerExerciseInfo): string | undefined {
   return main?.thumbnails?.small ?? main?.image;
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { Accept: 'application/json' },
-  });
+export class WgerApiError extends Error {
+  readonly status?: number;
+  readonly path: string;
 
-  if (!response.ok) {
-    throw new Error(`wger API error: ${response.status} ${response.statusText}`);
+  constructor(message: string, path: string, options?: { status?: number; cause?: unknown }) {
+    super(message);
+    this.name = 'WgerApiError';
+    this.path = path;
+    this.status = options?.status;
+    this.cause = options?.cause;
+  }
+}
+
+async function readErrorBody(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    return text.slice(0, 200);
+  } catch {
+    return '';
+  }
+}
+
+async function fetchJson<T>(path: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      headers: { Accept: 'application/json' },
+    });
+  } catch (err) {
+    throw new WgerApiError(
+      'Network request to wger.de failed. Check your connection and try again.',
+      path,
+      { cause: err }
+    );
   }
 
-  return response.json() as Promise<T>;
+  if (!response.ok) {
+    const body = await readErrorBody(response);
+    throw new WgerApiError(
+      `wger API error ${response.status} ${response.statusText}${body ? `: ${body}` : ''}`,
+      path,
+      { status: response.status }
+    );
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch (err) {
+    throw new WgerApiError('wger API returned a malformed JSON response.', path, {
+      status: response.status,
+      cause: err,
+    });
+  }
 }
 
 export async function getExerciseCategories(): Promise<WgerCategory[]> {

@@ -61,7 +61,7 @@ const DUMMY_WORKOUT: Workout = {
 
 export default function WorkoutScreen() {
   const router = useRouter();
-  const { data: loadedWorkout, status } = useLoadableData<Workout>(
+  const { data: loadedWorkout, status, error, retry } = useLoadableData<Workout>(
     () => Promise.resolve(DUMMY_WORKOUT),
     [],
     { loadingDelay: 600 }
@@ -167,6 +167,8 @@ export default function WorkoutScreen() {
   const headerTitle =
     status === 'loading'
       ? 'Loading...'
+      : status === 'error'
+      ? 'Workout unavailable'
       : status === 'empty'
       ? 'Workout'
       : workout?.title ?? 'Workout';
@@ -174,6 +176,8 @@ export default function WorkoutScreen() {
   const headerDuration =
     status === 'loading'
       ? '—'
+      : status === 'error'
+      ? 'Could not load workout'
       : status === 'empty'
       ? 'No exercises'
       : workout?.duration ?? '—';
@@ -224,6 +228,9 @@ export default function WorkoutScreen() {
             emptyIcon="barbell-outline"
             emptyTitle="No exercises yet"
             emptySubtitle="Add an exercise to start your workout."
+            error={error}
+            errorTitle="Couldn't load your workout"
+            onRetry={retry}
           >
             {status === 'data' && workout && (
               <>

@@ -101,6 +101,8 @@ export default function HomeScreen() {
           emptyIcon="flame-outline"
           emptyTitle="No nutrition logged"
           emptySubtitle="Start tracking your calories and macros."
+          error={nutrition.error}
+          onRetry={nutrition.retry}
         >
           {nutrition.status === 'data' && nutrition.data && (
             <View className="bg-[#121212] rounded-[24px] p-5 mb-4">
@@ -173,6 +175,8 @@ export default function HomeScreen() {
             emptyIcon="restaurant-outline"
             emptyTitle="No meals planned"
             emptySubtitle="Add a meal to your daily plan."
+            error={meals.error}
+            onRetry={meals.retry}
           >
             {meals.status === 'data' && meals.data && (
               <>

@@ -96,6 +96,8 @@ export const DUMMY_NUTRITION: NutritionData = {
 interface CalorieMacroTrackerProps {
   data: NutritionData | null;
   status: LoadableStatus;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 function NutritionContent({ data }: { data: NutritionData }) {
@@ -234,7 +236,12 @@ function NutritionContent({ data }: { data: NutritionData }) {
   );
 }
 
-export function CalorieMacroTracker({ data, status }: CalorieMacroTrackerProps) {
+export function CalorieMacroTracker({
+  data,
+  status,
+  error,
+  onRetry,
+}: CalorieMacroTrackerProps) {
   return (
     <View className="bg-[#121212] rounded-[20px] p-5 mb-3">
       {/* Section Label */}
@@ -248,6 +255,8 @@ export function CalorieMacroTracker({ data, status }: CalorieMacroTrackerProps) 
         emptyIcon="nutrition-outline"
         emptyTitle="No nutrition data"
         emptySubtitle="Log your first meal to see macros and calories."
+        error={error}
+        onRetry={onRetry}
       >
         {data && status === 'data' ? <NutritionContent data={data} /> : null}
       </LoadableContainer>

@@ -34,7 +34,7 @@ const DUMMY_PROFILE: ProfileData = {
 };
 
 export default function ProfileScreen() {
-  const { data, status } = useLoadableData<ProfileData>(
+  const { data, status, error, retry } = useLoadableData<ProfileData>(
     () => Promise.resolve(DUMMY_PROFILE),
     [],
     { loadingDelay: 500 }
@@ -64,6 +64,8 @@ export default function ProfileScreen() {
           emptyIcon="person-outline"
           emptyTitle="No profile found"
           emptySubtitle="Set up your profile to see stats and settings."
+          error={error}
+          onRetry={retry}
         >
           {data && (
             <View className="bg-[#121212] rounded-[24px] p-5 mb-5">

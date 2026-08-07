@@ -117,6 +117,7 @@ export default function TrainingScreen() {
           emptyTitle="No workout planned"
           emptySubtitle="Start a workout to see today's plan."
           error={plan.error}
+          onRetry={plan.retry}
         >
           {plan.data && (
             <View className="bg-[#121212] rounded-[20px] p-4">
@@ -141,6 +142,7 @@ export default function TrainingScreen() {
           emptyTitle="No recent workouts"
           emptySubtitle="Your completed workouts will appear here."
           error={workouts.error}
+          onRetry={workouts.retry}
         >
           {workouts.data?.map((workout, index, arr) => (
             <View
@@ -173,6 +175,7 @@ export default function TrainingScreen() {
           emptyTitle="No stats yet"
           emptySubtitle="Complete workouts to see weekly stats."
           error={stats.error}
+          onRetry={stats.retry}
         >
           {stats.data && (
             <View className="flex-row">

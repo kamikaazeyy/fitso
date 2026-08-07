@@ -11,7 +11,7 @@ export default function NutritionScreen() {
     day: 'numeric',
   });
 
-  const { data, status } = useLoadableData<NutritionData>(
+  const { data, status, error, retry } = useLoadableData<NutritionData>(
     () => Promise.resolve(DUMMY_NUTRITION),
     [],
     { loadingDelay: 600 }
@@ -39,6 +39,8 @@ export default function NutritionScreen() {
           emptyIcon="nutrition-outline"
           emptyTitle="No nutrition data"
           emptySubtitle="Log your first meal to get started."
+          error={error}
+          onRetry={retry}
         >
           {status === 'data' && (
             <View className="rounded-[20px] bg-[#121212] p-4 flex-row items-center justify-between mb-4">
@@ -60,7 +62,7 @@ export default function NutritionScreen() {
           )}
         </LoadableContainer>
 
-        <CalorieMacroTracker data={data} status={status} />
+        <CalorieMacroTracker data={data} status={status} error={error} onRetry={retry} />
       </ScrollView>
     </SafeAreaView>
   );
