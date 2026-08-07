@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
-  "dependencies": {}
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
 }

@@ -11,7 +11,7 @@ const mockToday = {
   strain: 7.2,
 };
 
-const server = http.createServer((req, res) => {
+function handleRequest(req, res) {
   res.setHeader('Content-Type', 'application/json');
 
   if (req.url === '/health') {
@@ -24,8 +24,16 @@ const server = http.createServer((req, res) => {
     res.writeHead(404);
     res.end(JSON.stringify({ error: 'Not found' }));
   }
-});
+}
 
-server.listen(PORT, () => {
-  console.log(`Fitso server running on http://localhost:${PORT}`);
-});
+function createServer() {
+  return http.createServer(handleRequest);
+}
+
+if (require.main === module) {
+  createServer().listen(PORT, () => {
+    console.log(`Fitso server running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = { handleRequest, createServer, mockToday };
