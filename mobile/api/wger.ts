@@ -95,6 +95,19 @@ export function getMainImage(info: WgerExerciseInfo): string | undefined {
   return main?.thumbnails?.small ?? main?.image;
 }
 
+export function matchesExerciseQuery(info: WgerExerciseInfo, query: string): boolean {
+  const lower = query.trim().toLowerCase();
+  if (!lower) return true;
+  const name = getExerciseName(info).toLowerCase();
+  const aliases = info.translations.flatMap((t) => t.aliases.map((a) => a.alias.toLowerCase()));
+  const category = info.category?.name.toLowerCase() ?? '';
+  return (
+    name.includes(lower) ||
+    aliases.some((a) => a.includes(lower)) ||
+    category.includes(lower)
+  );
+}
+
 async function fetchJson<T>(path: string): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     headers: { Accept: 'application/json' },
@@ -147,17 +160,5 @@ export async function searchExercises(
     `/exerciseinfo/?${params.toString()}`
   );
 
-  const lowerQuery = query.trim().toLowerCase();
-  if (!lowerQuery) return data.results;
-
-  return data.results.filter((info) => {
-    const name = getExerciseName(info).toLowerCase();
-    const aliases = info.translations.flatMap((t) => t.aliases.map((a) => a.alias.toLowerCase()));
-    const category = info.category?.name.toLowerCase() ?? '';
-    return (
-      name.includes(lowerQuery) ||
-      aliases.some((a) => a.includes(lowerQuery)) ||
-      category.includes(lowerQuery)
-    );
-  });
+  return data.results.filter((info) => matchesExerciseQuery(info, query));
 }

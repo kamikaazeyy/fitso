@@ -13,6 +13,7 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { StackHeader } from '@/components/StackHeader';
 import { useWorkout } from '@/context/WorkoutContext';
 
 interface Set {
@@ -186,30 +187,21 @@ export default function WorkoutScreen() {
         keyboardVerticalOffset={0}
       >
         {/* Sticky Header */}
-        <View className="flex-row items-center justify-between px-4 py-4 bg-black">
-          <View className="flex-row items-center flex-1">
+        <StackHeader
+          title={headerTitle}
+          subtitle={headerDuration}
+          onBack={() => router.back()}
+          className="flex-row items-center justify-between px-4 py-4 bg-black"
+          right={
             <TouchableOpacity
+              activeOpacity={0.85}
+              className="bg-[#E63946] rounded-xl px-5 py-2.5"
               onPress={() => router.back()}
-              activeOpacity={0.7}
-              className="mr-3 p-2 rounded-full bg-[#1C1C1E]"
             >
-              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+              <Text className="text-white font-bold text-sm">Finish</Text>
             </TouchableOpacity>
-            <View className="flex-1">
-              <Text className="text-white text-lg font-extrabold tracking-tight">
-                {headerTitle}
-              </Text>
-              <Text className="text-[#A0A0A0] text-sm font-medium">{headerDuration}</Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            className="bg-[#E63946] rounded-xl px-5 py-2.5"
-            onPress={() => router.back()}
-          >
-            <Text className="text-white font-bold text-sm">Finish</Text>
-          </TouchableOpacity>
-        </View>
+          }
+        />
 
         {/* Scrollable Exercise Cards */}
         <ScrollView

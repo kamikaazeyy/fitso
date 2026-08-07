@@ -1,10 +1,10 @@
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { colors } from '@/constants/theme';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { ScreenScroll } from '@/components/ScreenScroll';
+import { ScreenHeader } from '@/components/ScreenHeader';
 
 interface TodayPlan {
   name: string;
@@ -78,20 +78,12 @@ export default function TrainingScreen() {
   });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
-        className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 120 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="pt-6 pb-4">
-          <Text className="text-white text-3xl font-extrabold tracking-tight">
-            Training
-          </Text>
-          <Text className="text-[#A0A0A0] text-sm mt-1">
-            Plan, log, and crush your workouts.
-          </Text>
-        </View>
+    <ScreenScroll>
+        <ScreenHeader
+          title="Training"
+          subtitle="Plan, log, and crush your workouts."
+          className="pt-6 pb-4"
+        />
 
         <TouchableOpacity
           className="bg-[#E63946] rounded-[24px] p-5 flex-row items-center justify-between"
@@ -195,7 +187,6 @@ export default function TrainingScreen() {
             </View>
           )}
         </LoadableContainer>
-      </ScrollView>
-    </SafeAreaView>
+    </ScreenScroll>
   );
 }

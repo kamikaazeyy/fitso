@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { CircularProgressBase } from 'react-native-circular-progress-indicator';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LoadableContainer } from './LoadableContainer';
+import { showComingSoon } from '@/lib/alerts';
 import type { LoadableStatus } from '@/hooks/useLoadableData';
 
 export interface Macro {
@@ -221,7 +222,7 @@ function NutritionContent({ data }: { data: NutritionData }) {
               <TouchableOpacity
                 activeOpacity={0.7}
                 className="flex-row items-center py-2.5 px-3 rounded-xl border border-dashed border-[#2C2C2E]"
-                onPress={() => Alert.alert('Coming soon', 'Food logging is under development.')}
+                onPress={() => showComingSoon('Food logging is under development.')}
               >
                 <Ionicons name="add" size={16} color="#E63946" />
                 <Text className="text-[#E63946] font-semibold text-sm ml-2">Add Food</Text>

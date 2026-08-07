@@ -1,9 +1,11 @@
-import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { CalorieMacroTracker, DUMMY_NUTRITION, NutritionData } from '@/components/CalorieMacroTracker';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { ScreenScroll } from '@/components/ScreenScroll';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import { useLoadableData } from '@/hooks/useLoadableData';
+import { showComingSoon } from '@/lib/alerts';
 
 export default function NutritionScreen() {
   const today = new Date().toLocaleDateString('en-US', {
@@ -18,20 +20,8 @@ export default function NutritionScreen() {
   );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
-      <ScrollView
-        className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 120 }}
-        showsVerticalScrollIndicator={false}
-      >
-        <View className="pt-4 pb-2">
-          <Text className="text-white text-3xl font-extrabold tracking-tight">
-            Nutrition
-          </Text>
-          <Text className="text-[#A0A0A0] text-sm mt-1">
-            Track your macros and meals.
-          </Text>
-        </View>
+    <ScreenScroll>
+        <ScreenHeader title="Nutrition" subtitle="Track your macros and meals." />
 
         <LoadableContainer
           status={status}
@@ -52,7 +42,7 @@ export default function NutritionScreen() {
               <TouchableOpacity
                 className="bg-[#1C1C1E] rounded-full px-3 py-1"
                 activeOpacity={0.7}
-                onPress={() => Alert.alert('Coming soon', 'Nutrition editing is under development.')}
+                onPress={() => showComingSoon('Nutrition editing is under development.')}
               >
                 <Text className="text-[#E63946] text-xs font-semibold">Edit</Text>
               </TouchableOpacity>
@@ -61,7 +51,6 @@ export default function NutritionScreen() {
         </LoadableContainer>
 
         <CalorieMacroTracker data={data} status={status} />
-      </ScrollView>
-    </SafeAreaView>
+    </ScreenScroll>
   );
 }

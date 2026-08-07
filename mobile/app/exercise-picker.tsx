@@ -16,22 +16,16 @@ import {
   getExerciseCategories,
   getExerciseName,
   getMainImage,
+  matchesExerciseQuery,
   type WgerExerciseInfo,
   type WgerCategory,
 } from '@/api/wger';
 import { useWorkout } from '@/context/WorkoutContext';
 import { EmptyState } from '@/components/EmptyState';
+import { LoadingState } from '@/components/LoadingState';
+import { StackHeader } from '@/components/StackHeader';
 
 const PAGE_LIMIT = 50;
-
-function Loader() {
-  return (
-    <View className="items-center justify-center py-12">
-      <ActivityIndicator size="large" color="#E63946" />
-      <Text className="text-[#A0A0A0] text-sm mt-4">Loading exercises...</Text>
-    </View>
-  );
-}
 
 function ExerciseItem({
   info,
@@ -73,19 +67,6 @@ function ExerciseItem({
       </View>
       <Ionicons name="chevron-forward" size={20} color="#A0A0A0" />
     </TouchableOpacity>
-  );
-}
-
-function matchesQuery(info: WgerExerciseInfo, query: string): boolean {
-  if (!query.trim()) return true;
-  const lower = query.trim().toLowerCase();
-  const name = getExerciseName(info).toLowerCase();
-  const aliases = info.translations.flatMap((t) => t.aliases.map((a) => a.alias.toLowerCase()));
-  const category = info.category?.name.toLowerCase() ?? '';
-  return (
-    name.includes(lower) ||
-    aliases.some((a) => a.includes(lower)) ||
-    category.includes(lower)
   );
 }
 
@@ -156,7 +137,7 @@ export default function ExercisePickerScreen() {
   }, [offset, count, selectedCategory, loadPage]);
 
   const visibleResults = useMemo(
-    () => allResults.filter((info) => matchesQuery(info, debouncedQuery)),
+    () => allResults.filter((info) => matchesExerciseQuery(info, debouncedQuery)),
     [allResults, debouncedQuery]
   );
 
@@ -173,18 +154,7 @@ export default function ExercisePickerScreen() {
   return (
     <SafeAreaView className="flex-1 bg-black">
       {/* Header */}
-      <View className="flex-row items-center justify-between px-4 py-4">
-        <View className="flex-row items-center flex-1">
-          <TouchableOpacity
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-            className="mr-3 p-2 rounded-full bg-[#1C1C1E]"
-          >
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Text className="text-white text-lg font-extrabold tracking-tight">Add Exercise</Text>
-        </View>
-      </View>
+      <StackHeader title="Add Exercise" onBack={() => router.back()} />
 
       {/* Search */}
       <View className="px-4 mb-3">
@@ -240,7 +210,7 @@ export default function ExercisePickerScreen() {
       {/* Results */}
       <View className="flex-1 px-4">
         {loading && allResults.length === 0 ? (
-          <Loader />
+          <LoadingState message="Loading exercises..." />
         ) : error ? (
           <EmptyState
             icon="warning-outline"

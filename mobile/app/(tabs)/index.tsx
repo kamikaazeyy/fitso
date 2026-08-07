@@ -1,19 +1,13 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { DatePickerStrip } from '@/components/DatePickerStrip';
 import { SegmentedCalorieRing } from '@/components/SegmentedCalorieRing';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { ScreenScroll } from '@/components/ScreenScroll';
 import { useLoadableData } from '@/hooks/useLoadableData';
-import { colors } from '@/constants/theme';
+import { showComingSoon } from '@/lib/alerts';
 
 const NUTRITION_DATA = {
   dayLabel: 'Day 12',
@@ -64,18 +58,13 @@ export default function HomeScreen() {
   const meals = useLoadableData(fetchHomeMeals, [], { loadingDelay: 800 });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-      <ScrollView
-        className="flex-1 px-4"
-        contentContainerStyle={{ paddingBottom: 140 }}
-        showsVerticalScrollIndicator={false}
-      >
+    <ScreenScroll bottomPadding={140}>
         {/* Header */}
         <View className="flex-row items-center justify-between pt-6 pb-4">
           <TouchableOpacity
             activeOpacity={0.85}
             className="flex-row items-center bg-[#E63946] rounded-full px-4 py-2.5"
-            onPress={() => Alert.alert('Coming soon', 'Explore feature is under development.')}
+            onPress={() => showComingSoon('Explore feature is under development.')}
           >
             <Ionicons name="calendar-outline" size={18} color="#FFFFFF" />
             <Text className="text-white font-semibold text-sm ml-2">Explore</Text>
@@ -83,7 +72,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             className="p-2"
-            onPress={() => Alert.alert('Coming soon', 'Stats dashboard is under development.')}
+            onPress={() => showComingSoon('Stats dashboard is under development.')}
           >
             <Ionicons name="stats-chart" size={24} color="#E63946" />
           </TouchableOpacity>
@@ -147,7 +136,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             className="p-1"
-            onPress={() => Alert.alert('Coming soon', 'Camera calorie scan is under development.')}
+            onPress={() => showComingSoon('Camera calorie scan is under development.')}
           >
             <Ionicons name="camera-outline" size={20} color="#A0A0A0" />
           </TouchableOpacity>
@@ -160,7 +149,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               activeOpacity={0.7}
               className="flex-row items-center"
-              onPress={() => Alert.alert('Coming soon', 'Meal plan editor is under development.')}
+              onPress={() => showComingSoon('Meal plan editor is under development.')}
             >
               <Text className="text-[#E63946] text-sm font-semibold mr-1.5">Edit plan</Text>
               <Ionicons name="calendar-outline" size={18} color="#E63946" />
@@ -238,7 +227,6 @@ export default function HomeScreen() {
           <Ionicons name="barbell" size={20} color="#FFFFFF" />
           <Text className="text-white font-bold text-base ml-2">Start Workout</Text>
         </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+    </ScreenScroll>
   );
 }
