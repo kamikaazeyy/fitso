@@ -43,7 +43,10 @@ function ExerciseItem({
   const name = getExerciseName(info);
   const imageUrl = getMainImage(info);
   const category = info.category?.name ?? '';
-  const equipment = info.equipment.map((e) => e.name).join(', ');
+  const equipment = (Array.isArray(info.equipment) ? info.equipment : [])
+    .map((e) => e?.name)
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <TouchableOpacity
@@ -80,8 +83,10 @@ function matchesQuery(info: WgerExerciseInfo, query: string): boolean {
   if (!query.trim()) return true;
   const lower = query.trim().toLowerCase();
   const name = getExerciseName(info).toLowerCase();
-  const aliases = info.translations.flatMap((t) => t.aliases.map((a) => a.alias.toLowerCase()));
-  const category = info.category?.name.toLowerCase() ?? '';
+  const aliases = (Array.isArray(info.translations) ? info.translations : []).flatMap((t) =>
+    (Array.isArray(t?.aliases) ? t.aliases : []).map((a) => String(a?.alias ?? '').toLowerCase())
+  );
+  const category = info.category?.name?.toLowerCase() ?? '';
   return (
     name.includes(lower) ||
     aliases.some((a) => a.includes(lower)) ||

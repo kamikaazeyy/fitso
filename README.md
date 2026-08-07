@@ -22,6 +22,9 @@ cd server
 npm start
 ```
 
+Binds to `127.0.0.1:3000` by default. Override with `HOST` / `PORT` (e.g. `HOST=0.0.0.0` to reach it
+from a device on the LAN). Only `GET`/`HEAD` are served.
+
 ### Endpoints
 
 - `GET /health` — server health check
