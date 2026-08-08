@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String   @unique
+  name              String?
+  dailyCalorieGoal  Int      @default(2000)
+  createdAt         DateTime @default(now())
+  workouts          Workout[]
+  nutritionLogs     NutritionLog[]
+}
+
+model Workout {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String   @db.Uuid
+  title           String
+  durationSeconds Int      @default(0)
+  completedAt     DateTime @default(now())
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sets            WorkoutSet[]
+}
+
+model WorkoutSet {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workoutId    String  @db.Uuid
+  exerciseName String
+  wgerId       Int?
+  setNumber    Int
+  weightKg     Decimal @db.Decimal(5,2)
+  reps         Int
+  completed    Boolean @default(true)
+  workout      Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+}
+
+model NutritionLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  logDate   DateTime @db.Date
+  calories  Int      @default(0)
+  proteinG  Int      @default(0)
+  carbsG    Int      @default(0)
+  fatG      Int      @default(0)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, logDate])
+}

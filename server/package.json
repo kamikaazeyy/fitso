@@ -7,5 +7,12 @@
     "start": "node index.js",
     "dev": "node --watch index.js"
   },
-  "dependencies": {}
+  "devDependencies": {
+    "prisma": "^6.19.3"
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.3.0",
+    "@prisma/client": "^6.19.3",
+    "fastify": "^5.11.3"
+  }
 }
