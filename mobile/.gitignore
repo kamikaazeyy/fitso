@@ -4,3 +4,4 @@ dist
 dist-android
 *.log
 .DS_Store
+.env

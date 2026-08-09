@@ -11,10 +11,12 @@ model User {
   id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   email             String   @unique
   name              String?
+  passwordHash      String?
   dailyCalorieGoal  Int      @default(2000)
   createdAt         DateTime @default(now())
   workouts          Workout[]
   nutritionLogs     NutritionLog[]
+  routines          Routine[]
 }
 
 model Workout {
@@ -36,7 +38,38 @@ model WorkoutSet {
   weightKg     Decimal @db.Decimal(5,2)
   reps         Int
   completed    Boolean @default(true)
+  attachment   String?
   workout      Workout @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+}
+
+model Routine {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  splits    Split[]
+}
+
+model Split {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routineId String   @db.Uuid
+  name      String
+  order     Int      @default(0)
+  routine   Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  exercises RoutineExercise[]
+}
+
+model RoutineExercise {
+  id           String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  splitId      String  @db.Uuid
+  wgerId       Int?
+  exerciseName String
+  equipment    String[]
+  attachment   String?
+  order        Int     @default(0)
+  split        Split   @relation(fields: [splitId], references: [id], onDelete: Cascade)
 }
 
 model NutritionLog {

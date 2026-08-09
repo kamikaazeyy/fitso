@@ -3,79 +3,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { colors } from '@/constants/theme';
-import { useLoadableData } from '@/hooks/useLoadableData';
+import { useRoutines } from '@/src/hooks/useRoutines';
 import { LoadableContainer } from '@/components/LoadableContainer';
-
-interface TodayPlan {
-  name: string;
-  duration: string;
-  exercises: string[];
-}
-
-interface RecentWorkout {
-  id: string;
-  name: string;
-  date: string;
-  duration: string;
-}
-
-interface WeeklyStats {
-  workouts: number;
-  volume: string;
-}
-
-async function fetchTodayPlan(): Promise<TodayPlan | null> {
-  return Promise.resolve({
-    name: 'Late Night Legs',
-    duration: '45 min',
-    exercises: ['Barbell Squat', 'Leg Extension'],
-  });
-}
-
-async function fetchRecentWorkouts(): Promise<RecentWorkout[]> {
-  return Promise.resolve([
-    {
-      id: '1',
-      name: 'Upper Body Power',
-      date: 'Mon, May 19',
-      duration: '52 min',
-    },
-    {
-      id: '2',
-      name: 'Lower Body Strength',
-      date: 'Sat, May 17',
-      duration: '48 min',
-    },
-    {
-      id: '3',
-      name: 'Full Body Conditioning',
-      date: 'Thu, May 15',
-      duration: '65 min',
-    },
-  ]);
-}
-
-async function fetchWeeklyStats(): Promise<WeeklyStats> {
-  return Promise.resolve({
-    workouts: 4,
-    volume: '12,400 kg',
-  });
-}
 
 export default function TrainingScreen() {
   const router = useRouter();
+  const { data: routines, isLoading, error } = useRoutines();
 
-  const plan = useLoadableData<TodayPlan | null>(fetchTodayPlan, [], {
-    loadingDelay: 600,
-  });
+  const status = isLoading ? 'loading' : error || !routines || routines.length === 0 ? 'empty' : 'data';
 
-  const workouts = useLoadableData<RecentWorkout[]>(fetchRecentWorkouts, [], {
-    loadingDelay: 600,
-  });
-
-  const stats = useLoadableData<WeeklyStats>(fetchWeeklyStats, [], {
-    loadingDelay: 500,
-  });
+  const startWorkout = (routineId?: string, splitId?: string) => {
+    if (routineId && splitId) {
+      router.push(`/workout?routineId=${routineId}&splitId=${splitId}`);
+    } else {
+      router.push('/workout');
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -85,115 +28,71 @@ export default function TrainingScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="pt-6 pb-4">
-          <Text className="text-white text-3xl font-extrabold tracking-tight">
-            Training
-          </Text>
-          <Text className="text-[#A0A0A0] text-sm mt-1">
-            Plan, log, and crush your workouts.
-          </Text>
+          <Text className="text-white text-3xl font-extrabold tracking-tight">Training</Text>
+          <Text className="text-[#A0A0A0] text-sm mt-1">Pick a routine and start lifting.</Text>
         </View>
 
         <TouchableOpacity
-          className="bg-[#E63946] rounded-[24px] p-5 flex-row items-center justify-between"
+          className="bg-[#E63946] rounded-[24px] p-5 flex-row items-center justify-between mb-5"
           activeOpacity={0.8}
-          onPress={() => router.push('/workout')}
+          onPress={() => startWorkout()}
         >
           <View className="flex-row items-center">
             <Ionicons name="barbell" size={28} color="#FFFFFF" />
-            <Text className="text-white text-xl font-extrabold ml-3">
-              Start Workout
-            </Text>
+            <Text className="text-white text-xl font-extrabold ml-3">Quick Workout</Text>
           </View>
           <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
         </TouchableOpacity>
 
-        <Text className="text-white text-lg font-bold mt-6 mb-3">
-          Today's Plan
-        </Text>
+        <View className="flex-row items-center justify-between mb-3">
+          <Text className="text-white text-lg font-bold">Your Routines</Text>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push('/create-routine')}
+            className="flex-row items-center"
+          >
+            <Ionicons name="add" size={18} color="#E63946" />
+            <Text className="text-[#E63946] text-sm font-semibold ml-1">New</Text>
+          </TouchableOpacity>
+        </View>
+
         <LoadableContainer
-          status={plan.status}
-          loadingMessage="Loading today's plan..."
+          status={status}
+          loadingMessage="Loading routines..."
           emptyIcon="barbell-outline"
-          emptyTitle="No workout planned"
-          emptySubtitle="Start a workout to see today's plan."
-          error={plan.error}
+          emptyTitle="No routines yet"
+          emptySubtitle="Create a routine to see it here."
+          error={error?.message}
         >
-          {plan.data && (
-            <View className="bg-[#121212] rounded-[20px] p-4">
-              <View className="flex-row items-center">
-                <View className="bg-[#E63946] w-2 h-2 rounded-full mr-2" />
-                <Text className="text-white font-bold">{plan.data.name}</Text>
+          {routines &&
+            routines.map((routine) => (
+              <View
+                key={routine.id}
+                className="bg-[#121212] rounded-[20px] p-4 mb-3"
+              >
+                <Text className="text-white text-lg font-bold mb-3">{routine.name}</Text>
+                {routine.splits.map((split) => (
+                  <View
+                    key={split.id}
+                    className="flex-row items-center justify-between py-2 border-t border-[#1C1C1E]"
+                  >
+                    <View className="flex-1 pr-3">
+                      <Text className="text-white font-semibold">{split.name}</Text>
+                      <Text className="text-[#A0A0A0] text-xs">
+                        {split.exercises.length} exercise{split.exercises.length !== 1 ? 's' : ''}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => startWorkout(routine.id, split.id)}
+                      className="bg-[#E63946] rounded-xl px-4 py-2"
+                    >
+                      <Text className="text-white font-bold text-sm">Start</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
               </View>
-              <Text className="text-[#A0A0A0] text-sm mt-1">
-                {plan.data.duration} · {plan.data.exercises.join(', ')}
-              </Text>
-            </View>
-          )}
-        </LoadableContainer>
-
-        <Text className="text-white text-lg font-bold mt-6 mb-3">
-          Recent Workouts
-        </Text>
-        <LoadableContainer
-          status={workouts.status}
-          loadingMessage="Loading workouts..."
-          emptyIcon="time-outline"
-          emptyTitle="No recent workouts"
-          emptySubtitle="Your completed workouts will appear here."
-          error={workouts.error}
-        >
-          {workouts.data?.map((workout, index, arr) => (
-            <View
-              key={workout.id}
-              className={`bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between ${
-                index < arr.length - 1 ? 'mb-3' : ''
-              }`}
-            >
-              <View className="flex-row items-center">
-                <View className="bg-[#1C1C1E] rounded-lg w-10 h-10 items-center justify-center mr-3">
-                  <Ionicons name="barbell" size={18} color="#E63946" />
-                </View>
-                <View>
-                  <Text className="text-white font-bold">{workout.name}</Text>
-                  <Text className="text-[#A0A0A0] text-xs">{workout.date}</Text>
-                </View>
-              </View>
-              <Text className="text-[#A0A0A0] text-sm">{workout.duration}</Text>
-            </View>
-          ))}
-        </LoadableContainer>
-
-        <Text className="text-white text-lg font-bold mt-6 mb-3">
-          Weekly Stats
-        </Text>
-        <LoadableContainer
-          status={stats.status}
-          loadingMessage="Loading stats..."
-          emptyIcon="stats-chart-outline"
-          emptyTitle="No stats yet"
-          emptySubtitle="Complete workouts to see weekly stats."
-          error={stats.error}
-        >
-          {stats.data && (
-            <View className="flex-row">
-              <View className="flex-1 mr-3">
-                <View className="bg-[#121212] rounded-[20px] p-4">
-                  <Text className="text-[#A0A0A0] text-sm">Workouts</Text>
-                  <Text className="text-white text-xl font-bold mt-1">
-                    {stats.data.workouts}
-                  </Text>
-                </View>
-              </View>
-              <View className="flex-1">
-                <View className="bg-[#121212] rounded-[20px] p-4">
-                  <Text className="text-[#A0A0A0] text-sm">Volume</Text>
-                  <Text className="text-white text-xl font-bold mt-1">
-                    {stats.data.volume}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          )}
+            ))}
         </LoadableContainer>
       </ScrollView>
     </SafeAreaView>

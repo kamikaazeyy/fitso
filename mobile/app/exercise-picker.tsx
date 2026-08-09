@@ -164,7 +164,12 @@ export default function ExercisePickerScreen() {
 
   const handleSelect = useCallback(
     (info: WgerExerciseInfo) => {
-      selectExercise({ id: info.uuid, name: getExerciseName(info) });
+      selectExercise({
+        id: info.uuid,
+        name: getExerciseName(info),
+        wgerId: info.id,
+        equipment: info.equipment.map((e) => e.name),
+      });
       router.back();
     },
     [selectExercise, router]

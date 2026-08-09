@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { useAuth } from '@/context/AuthContext';
 
 interface Stats {
   weight: string;
@@ -39,6 +40,7 @@ export default function ProfileScreen() {
     [],
     { loadingDelay: 500 }
   );
+  const { logout } = useAuth();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
@@ -152,7 +154,7 @@ export default function ProfileScreen() {
           onPress={() =>
             Alert.alert('Log Out', 'Are you sure you want to log out?', [
               { text: 'Cancel', style: 'cancel' },
-              { text: 'Log Out', style: 'destructive' },
+              { text: 'Log Out', style: 'destructive', onPress: logout },
             ])
           }
         >

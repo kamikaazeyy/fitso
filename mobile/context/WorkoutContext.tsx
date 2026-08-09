@@ -3,6 +3,8 @@ import React, { createContext, useContext, useState, useCallback, useMemo } from
 export interface PendingExercise {
   id: string;
   name: string;
+  wgerId?: number;
+  equipment: string[];
 }
 
 interface WorkoutContextValue {

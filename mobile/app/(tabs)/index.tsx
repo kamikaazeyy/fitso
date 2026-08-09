@@ -13,17 +13,8 @@ import { DatePickerStrip } from '@/components/DatePickerStrip';
 import { SegmentedCalorieRing } from '@/components/SegmentedCalorieRing';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { useLoadableData } from '@/hooks/useLoadableData';
+import { useDashboardData } from '@/src/hooks/useDashboard';
 import { colors } from '@/constants/theme';
-
-const NUTRITION_DATA = {
-  dayLabel: 'Day 12',
-  calories: { current: 640, target: 1500 },
-  macros: [
-    { label: 'Carbs', current: 80, target: 160, color: '#38BDF8' },
-    { label: 'Proteins', current: 55, target: 75, color: '#FACC15' },
-    { label: 'Fats', current: 9, target: 30, color: '#C084FC' },
-  ],
-};
 
 const MEAL_DATA = {
   promo: {
@@ -37,10 +28,6 @@ const MEAL_DATA = {
     calories: 450,
   },
 };
-
-async function fetchHomeNutrition(): Promise<typeof NUTRITION_DATA> {
-  return NUTRITION_DATA;
-}
 
 async function fetchHomeMeals(): Promise<typeof MEAL_DATA> {
   return MEAL_DATA;
@@ -60,8 +47,23 @@ export default function HomeScreen() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
 
-  const nutrition = useLoadableData(fetchHomeNutrition, [], { loadingDelay: 600 });
+  const { data: dashboard, isLoading: isLoadingNutrition, error: nutritionError } = useDashboardData();
   const meals = useLoadableData(fetchHomeMeals, [], { loadingDelay: 800 });
+
+  const nutrition = dashboard?.nutrition ?? { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 };
+
+  const ringCalories = { current: nutrition.calories, target: nutrition.calories };
+  const ringMacros = [
+    { label: 'Carbs', current: nutrition.carbsG, target: nutrition.carbsG, color: '#38BDF8' },
+    { label: 'Protein', current: nutrition.proteinG, target: nutrition.proteinG, color: '#FACC15' },
+    { label: 'Fats', current: nutrition.fatG, target: nutrition.fatG, color: '#C084FC' },
+  ];
+
+  const nutritionStatus = isLoadingNutrition
+    ? 'loading'
+    : nutritionError || !dashboard
+    ? 'empty'
+    : 'data';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -96,42 +98,41 @@ export default function HomeScreen() {
 
         {/* Calorie Ring + Macros Card */}
         <LoadableContainer
-          status={nutrition.status}
+          status={nutritionStatus}
           loadingMessage="Loading nutrition..."
           emptyIcon="flame-outline"
           emptyTitle="No nutrition logged"
           emptySubtitle="Start tracking your calories and macros."
+          error={nutritionError ? 'Failed to load nutrition' : null}
         >
-          {nutrition.status === 'data' && nutrition.data && (
-            <View className="bg-[#121212] rounded-[24px] p-5 mb-4">
-              <View className="flex-row items-center">
-                <SegmentedCalorieRing
-                  calories={nutrition.data.calories}
-                  macros={nutrition.data.macros}
-                  dayLabel={nutrition.data.dayLabel}
-                  size={210}
-                  strokeWidth={16}
-                />
+          <View className="bg-[#121212] rounded-[24px] p-5 mb-4">
+            <View className="flex-row items-center">
+              <SegmentedCalorieRing
+                calories={ringCalories}
+                macros={ringMacros}
+                dayLabel="Today"
+                size={210}
+                strokeWidth={16}
+              />
 
-                {/* Macro Stats */}
-                <View className="flex-1 ml-2">
-                  {nutrition.data.macros.map((macro) => (
-                    <View key={macro.label} className="flex-row items-center mb-4">
-                      <MacroIconBars color={macro.color} />
-                      <View>
-                        <Text className="text-white text-base font-bold">
-                          {macro.current}/{macro.target}g
-                        </Text>
-                        <Text style={{ color: macro.color }} className="text-xs font-medium">
-                          {macro.label}
-                        </Text>
-                      </View>
+              {/* Macro Stats */}
+              <View className="flex-1 ml-2">
+                {ringMacros.map((macro) => (
+                  <View key={macro.label} className="flex-row items-center mb-4">
+                    <MacroIconBars color={macro.color} />
+                    <View>
+                      <Text className="text-white text-base font-bold">
+                        {macro.current}/{macro.target}g
+                      </Text>
+                      <Text style={{ color: macro.color }} className="text-xs font-medium">
+                        {macro.label}
+                      </Text>
                     </View>
-                  ))}
-                </View>
+                  </View>
+                ))}
               </View>
             </View>
-          )}
+          </View>
         </LoadableContainer>
 
         {/* Check Calories Input */}

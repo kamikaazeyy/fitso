@@ -7,13 +7,16 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useLoadableData } from '@/hooks/useLoadableData';
 import { LoadableContainer } from '@/components/LoadableContainer';
-import { useWorkout } from '@/context/WorkoutContext';
+import { AttachmentPicker } from '@/components/AttachmentPicker';
+import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
+import { getAttachmentsForEquipment } from '@/constants/attachments';
+import { client } from '@/src/api/client';
 
 interface Set {
   id: string;
@@ -27,52 +30,171 @@ interface Set {
 interface Exercise {
   id: string;
   name: string;
+  wgerId?: number;
+  equipment: string[];
+  attachment: string;
   sets: Set[];
 }
 
 interface Workout {
   title: string;
-  duration: string;
+  durationSeconds: number;
   exercises: Exercise[];
 }
 
-const DUMMY_WORKOUT: Workout = {
-  title: 'Late Night Legs',
-  duration: '45:12',
-  exercises: [
-    {
-      id: 'e1',
-      name: 'Barbell Squat',
-      sets: [
-        { id: 's1', number: 1, previous: '100kg x 8', weight: '100', reps: '8', isCompleted: true },
-        { id: 's2', number: 2, previous: '105kg x 6', weight: '105', reps: '6', isCompleted: false },
-        { id: 's3', number: 3, previous: '105kg x 6', weight: '', reps: '', isCompleted: false },
-      ],
-    },
-    {
-      id: 'e2',
-      name: 'Leg Extension',
-      sets: [
-        { id: 's4', number: 1, previous: '60kg x 12', weight: '65', reps: '10', isCompleted: false },
-      ],
-    },
-  ],
-};
+function formatTime(totalSeconds: number): string {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 export default function WorkoutScreen() {
   const router = useRouter();
-  const { data: loadedWorkout, status } = useLoadableData<Workout>(
-    () => Promise.resolve(DUMMY_WORKOUT),
-    [],
-    { loadingDelay: 600 }
-  );
+  const { splitId, routineId } = useLocalSearchParams<{ splitId?: string; routineId?: string }>();
+  const { pendingExercise, consumePendingExercise } = useWorkout();
+
   const [workout, setWorkout] = useState<Workout | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [pickingExerciseId, setPickingExerciseId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  // Load split or start empty
+  useEffect(() => {
+    if (!splitId || !routineId) {
+      setWorkout({ title: 'Workout', durationSeconds: 0, exercises: [] });
+      setIsLoading(false);
+      return;
+    }
+
+    client
+      .get(`/api/routines/${routineId}`)
+      .then(({ data }) => {
+        const split = data?.splits?.find((s: any) => s.id === splitId);
+        if (!split) {
+          setError('Split not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const exercises: Exercise[] = (split.exercises || []).map((ex: any, idx: number) => {
+          const attachments = getAttachmentsForEquipment(ex.equipment || []);
+          const defaultAttachment = ex.attachment || attachments[0]?.name || 'No attachment';
+          return {
+            id: `e-${Date.now()}-${idx}`,
+            name: ex.exerciseName,
+            wgerId: ex.wgerId,
+            equipment: ex.equipment || [],
+            attachment: defaultAttachment,
+            sets: [
+              {
+                id: `s-${Date.now()}-${idx}`,
+                number: 1,
+                previous: '',
+                weight: '',
+                reps: '',
+                isCompleted: false,
+              },
+            ],
+          };
+        });
+
+        setWorkout({
+          title: `${data.name} - ${split.name}`,
+          durationSeconds: 0,
+          exercises,
+        });
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Failed to load split');
+      })
+      .finally(() => setIsLoading(false));
+  }, [splitId, routineId]);
+
+  // Timer
+  useEffect(() => {
+    if (!running) return;
+    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
+    return () => clearInterval(interval);
+  }, [running]);
+
+  // Consume exercise added from picker
+  const addExercise = useCallback((pending: PendingExercise) => {
+    setWorkout((prev) => {
+      if (!prev) return prev;
+      const timestamp = Date.now();
+      const attachments = getAttachmentsForEquipment(pending.equipment);
+      const defaultAttachment = attachments[0]?.name || 'No attachment';
+      const newExercise: Exercise = {
+        id: `e-${timestamp}`,
+        name: pending.name,
+        wgerId: pending.wgerId,
+        equipment: pending.equipment,
+        attachment: defaultAttachment,
+        sets: [
+          {
+            id: `s-${timestamp}`,
+            number: 1,
+            previous: '',
+            weight: '',
+            reps: '',
+            isCompleted: false,
+          },
+        ],
+      };
+      return { ...prev, exercises: [...prev.exercises, newExercise] };
+    });
+  }, []);
 
   useEffect(() => {
-    if (loadedWorkout) {
-      setWorkout(loadedWorkout);
+    const pending = consumePendingExercise();
+    if (pending) {
+      addExercise(pending);
     }
-  }, [loadedWorkout]);
+  }, [pendingExercise, consumePendingExercise, addExercise]);
+
+  const addSet = (exerciseId: string) => {
+    setWorkout((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        exercises: prev.exercises.map((ex) => {
+          if (ex.id !== exerciseId) return ex;
+          const lastSet = ex.sets[ex.sets.length - 1];
+          const newSet: Set = {
+            id: `s-${Date.now()}`,
+            number: ex.sets.length + 1,
+            previous: lastSet ? `${lastSet.weight}kg x ${lastSet.reps}` : '',
+            weight: '',
+            reps: '',
+            isCompleted: false,
+          };
+          return { ...ex, sets: [...ex.sets, newSet] };
+        }),
+      };
+    });
+  };
+
+  const updateSet = (
+    exerciseId: string,
+    setId: string,
+    field: 'weight' | 'reps',
+    value: string
+  ) => {
+    setWorkout((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        exercises: prev.exercises.map((ex) =>
+          ex.id === exerciseId
+            ? { ...ex, sets: ex.sets.map((s) => (s.id === setId ? { ...s, [field]: value } : s)) }
+            : ex
+        ),
+      };
+    });
+  };
 
   const toggleSetCompleted = (exerciseId: string, setId: string) => {
     setWorkout((prev) => {
@@ -93,90 +215,56 @@ export default function WorkoutScreen() {
     });
   };
 
-  const updateSet = (exerciseId: string, setId: string, field: 'weight' | 'reps', value: string) => {
+  const updateAttachment = (exerciseId: string, attachment: string) => {
     setWorkout((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         exercises: prev.exercises.map((ex) =>
-          ex.id === exerciseId
-            ? {
-                ...ex,
-                sets: ex.sets.map((s) =>
-                  s.id === setId ? { ...s, [field]: value } : s
-                ),
-              }
-            : ex
+          ex.id === exerciseId ? { ...ex, attachment } : ex
         ),
       };
     });
   };
 
-  const addSet = (exerciseId: string) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        exercises: prev.exercises.map((ex) => {
-          if (ex.id !== exerciseId) return ex;
-          const lastSet = ex.sets[ex.sets.length - 1];
-          const newSet: Set = {
-            id: `s${Date.now()}`,
-            number: ex.sets.length + 1,
-            previous: lastSet ? `${lastSet.weight}kg x ${lastSet.reps}` : '',
-            weight: '',
-            reps: '',
-            isCompleted: false,
-          };
-          return { ...ex, sets: [...ex.sets, newSet] };
-        }),
-      };
-    });
+  const handleFinish = async () => {
+    if (!workout) return;
+    if (workout.exercises.length === 0) {
+      Alert.alert('Empty workout', 'Add at least one exercise before finishing.');
+      return;
+    }
+    setSaving(true);
+    setRunning(false);
+
+    const sets = workout.exercises.flatMap((ex) =>
+      ex.sets.map((set, setIdx) => ({
+        exerciseName: ex.name,
+        wgerId: ex.wgerId || null,
+        setNumber: setIdx + 1,
+        weightKg: set.weight,
+        reps: set.reps,
+        completed: set.isCompleted,
+        attachment: ex.attachment === 'No attachment' ? null : ex.attachment,
+      }))
+    );
+
+    try {
+      await client.post('/api/workouts', {
+        title: workout.title,
+        durationSeconds: elapsed,
+        sets,
+        splitId: splitId ?? null,
+      });
+      router.back();
+    } catch (err) {
+      setSaving(false);
+      Alert.alert('Failed to save', err instanceof Error ? err.message : 'Could not save workout');
+    }
   };
 
-  const addExercise = useCallback((name: string) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      const timestamp = Date.now();
-      const newExercise: Exercise = {
-        id: `e${timestamp}`,
-        name,
-        sets: [
-          {
-            id: `s${timestamp}`,
-            number: 1,
-            previous: '',
-            weight: '',
-            reps: '',
-            isCompleted: false,
-          },
-        ],
-      };
-      return { ...prev, exercises: [...prev.exercises, newExercise] };
-    });
-  }, []);
+  const pickingExercise = workout?.exercises.find((e) => e.id === pickingExerciseId);
 
-  const { pendingExercise, consumePendingExercise } = useWorkout();
-  useEffect(() => {
-    const exercise = consumePendingExercise();
-    if (exercise) {
-      addExercise(exercise.name);
-    }
-  }, [pendingExercise, consumePendingExercise]);
-
-  const headerTitle =
-    status === 'loading'
-      ? 'Loading...'
-      : status === 'empty'
-      ? 'Workout'
-      : workout?.title ?? 'Workout';
-
-  const headerDuration =
-    status === 'loading'
-      ? '—'
-      : status === 'empty'
-      ? 'No exercises'
-      : workout?.duration ?? '—';
+  const status = isLoading ? 'loading' : error || !workout || workout.exercises.length === 0 ? 'empty' : 'data';
 
   return (
     <SafeAreaView className="flex-1 bg-black">
@@ -196,18 +284,28 @@ export default function WorkoutScreen() {
               <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
             </TouchableOpacity>
             <View className="flex-1">
-              <Text className="text-white text-lg font-extrabold tracking-tight">
-                {headerTitle}
+              <Text className="text-white text-lg font-extrabold tracking-tight" numberOfLines={1}>
+                {workout?.title ?? 'Workout'}
               </Text>
-              <Text className="text-[#A0A0A0] text-sm font-medium">{headerDuration}</Text>
+              <View className="flex-row items-center mt-1">
+                <Text className="text-[#E63946] text-xl font-bold mr-3">{formatTime(elapsed)}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() => setRunning(!running)}
+                  className="w-8 h-8 rounded-full bg-[#1C1C1E] items-center justify-center mr-2"
+                >
+                  <Ionicons name={running ? 'pause' : 'play'} size={16} color="#E63946" />
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
           <TouchableOpacity
             activeOpacity={0.85}
-            className="bg-[#E63946] rounded-xl px-5 py-2.5"
-            onPress={() => router.back()}
+            disabled={saving}
+            className={`rounded-xl px-5 py-2.5 ${saving ? 'bg-[#E63946]/50' : 'bg-[#E63946]'}`}
+            onPress={handleFinish}
           >
-            <Text className="text-white font-bold text-sm">Finish</Text>
+            <Text className="text-white font-bold text-sm">{saving ? 'Saving...' : 'Finish'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -224,8 +322,9 @@ export default function WorkoutScreen() {
             emptyIcon="barbell-outline"
             emptyTitle="No exercises yet"
             emptySubtitle="Add an exercise to start your workout."
+            error={error}
           >
-            {status === 'data' && workout && (
+            {workout && workout.exercises.length > 0 && (
               <>
                 {workout.exercises.map((exercise, exIndex) => (
                   <View
@@ -234,9 +333,22 @@ export default function WorkoutScreen() {
                     style={exIndex === 0 ? { marginTop: 4 } : undefined}
                   >
                     {/* Exercise Name */}
-                    <Text className="text-white text-lg font-bold mb-4">
-                      {exercise.name}
-                    </Text>
+                    <Text className="text-white text-lg font-bold mb-1">{exercise.name}</Text>
+
+                    {/* Attachment Picker */}
+                    {getAttachmentsForEquipment(exercise.equipment).length > 1 && (
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => setPickingExerciseId(exercise.id)}
+                        className="flex-row items-center mb-4"
+                      >
+                        <Ionicons name="options-outline" size={14} color="#E63946" />
+                        <Text className="text-[#E63946] text-sm font-semibold ml-1.5">
+                          {exercise.attachment === 'No attachment' ? 'Add attachment' : exercise.attachment}
+                        </Text>
+                        <Ionicons name="chevron-down" size={14} color="#E63946" className="ml-1" />
+                      </TouchableOpacity>
+                    )}
 
                     {/* Column Headers */}
                     <View className="flex-row items-center mb-3 px-1">
@@ -327,6 +439,23 @@ export default function WorkoutScreen() {
             <Text className="text-[#E63946] font-bold text-base ml-2">Add Exercise</Text>
           </TouchableOpacity>
         </ScrollView>
+
+        <AttachmentPicker
+          visible={!!pickingExerciseId}
+          exerciseName={pickingExercise?.name ?? ''}
+          equipment={pickingExercise?.equipment ?? []}
+          selectedId={
+            pickingExercise
+              ? getAttachmentsForEquipment(pickingExercise.equipment).find(
+                  (a) => a.name === pickingExercise.attachment
+                )?.id ?? null
+              : null
+          }
+          onClose={() => setPickingExerciseId(null)}
+          onSelect={(attachment) =>
+            pickingExerciseId && updateAttachment(pickingExerciseId, attachment.name)
+          }
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
