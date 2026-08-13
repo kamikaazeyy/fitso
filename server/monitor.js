@@ -1,9 +1,6 @@
 const { execFile } = require('child_process');
-const { promisify } = require('util');
 const fs = require('fs/promises');
 const os = require('os');
-
-const execFileAsync = promisify(execFile);
 
 const MONITOR_REPO = process.env.MONITOR_REPO || 'kamikaazeyy/fitso';
 const CF_SPEED_URL = 'https://speed.cloudflare.com/__down?bytes=25000000';
