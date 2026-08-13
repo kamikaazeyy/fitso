@@ -3,6 +3,7 @@ const cors = require('@fastify/cors');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const monitor = require('./monitor');
 
 const app = Fastify({ logger: true });
 const prisma = new PrismaClient();
@@ -13,6 +14,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fitso-dev-secret-change-me';
 let DEV_USER_ID = null;
 
 app.register(cors, { origin: '*' });
+app.register(monitor);
 
 // Health checks (Keeps the Tailscale ping test working)
 app.get('/health', async () => ({ status: 'ok', server: 'fastify-prisma' }));
