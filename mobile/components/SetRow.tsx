@@ -73,6 +73,8 @@ export function SetRow({
       </Text>
 
       <TextInput
+        // Remount on ghost change: Android keeps the placeholder from first render.
+        key={`weight-${set.previousWeight ?? 'none'}`}
         accessibilityLabel={`weight-${set.setIndex}`}
         value={set.weight === null ? '' : String(set.weight)}
         onChangeText={onChangeWeight}
@@ -83,6 +85,7 @@ export function SetRow({
       />
 
       <TextInput
+        key={`reps-${set.previousReps ?? 'none'}`}
         accessibilityLabel={`reps-${set.setIndex}`}
         value={set.reps === null ? '' : String(set.reps)}
         onChangeText={onChangeReps}

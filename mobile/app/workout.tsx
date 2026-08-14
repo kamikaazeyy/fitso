@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -61,12 +61,18 @@ export default function WorkoutScreen() {
   const [error, setError] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [pickingExerciseId, setPickingExerciseId] = useState<string | null>(null);
+  // Seeding runs once per mount: finishing or discarding clears `isActive` while
+  // this screen is still mounted, and re-seeding there would spawn a phantom session.
+  const hasSeeded = useRef(false);
 
   useLiveActivity();
 
   // Rehydrated sessions (MMKV) resume as-is; otherwise seed from the split template.
   useEffect(() => {
-    if (isActive) {
+    if (hasSeeded.current) return;
+    hasSeeded.current = true;
+
+    if (useWorkoutSessionStore.getState().isActive) {
       setIsLoading(false);
       return;
     }
@@ -119,7 +125,7 @@ export default function WorkoutScreen() {
     return () => {
       cancelled = true;
     };
-  }, [isActive, splitId, routineId, startWorkout]);
+  }, [splitId, routineId, startWorkout]);
 
   // Elapsed time is derived from the persisted startTime, so it survives a crash.
   useEffect(() => {
