@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { WorkoutProvider } from '@/context/WorkoutContext';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { LoginScreen } from '@/components/LoginScreen';
+import { RestTimerBar } from '@/components/RestTimerBar';
+import { PowerSyncProvider } from '@/src/db/PowerSyncProvider';
 import '../global.css';
 
 const queryClient = new QueryClient();
@@ -25,6 +27,7 @@ function AppContent() {
     <>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }} />
+      <RestTimerBar />
     </>
   );
 }
@@ -35,9 +38,11 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <AuthProvider>
-            <WorkoutProvider>
-              <AppContent />
-            </WorkoutProvider>
+            <PowerSyncProvider>
+              <WorkoutProvider>
+                <AppContent />
+              </WorkoutProvider>
+            </PowerSyncProvider>
           </AuthProvider>
         </SafeAreaProvider>
       </QueryClientProvider>
