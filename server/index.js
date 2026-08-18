@@ -147,6 +147,45 @@ app.post('/api/workouts', { preHandler: authenticate }, async (request, reply) =
   }
 });
 
+// 1b. Get workouts for the authenticated user
+app.get('/api/workouts', { preHandler: authenticate }, async (request, reply) => {
+  const { limit = '50', offset = '0' } = request.query;
+  const take = Math.min(parseInt(limit, 10) || 50, 100);
+  const skip = parseInt(offset, 10) || 0;
+
+  try {
+    const workouts = await prisma.workout.findMany({
+      where: { userId: request.userId },
+      include: { sets: true },
+      orderBy: { completedAt: 'desc' },
+      take,
+      skip,
+    });
+    return reply.send(workouts);
+  } catch (error) {
+    app.log.error(error);
+    return reply.code(500).send({ error: 'Failed to fetch workouts' });
+  }
+});
+
+// 1c. Get a single workout
+app.get('/api/workouts/:id', { preHandler: authenticate }, async (request, reply) => {
+  const { id } = request.params;
+  try {
+    const workout = await prisma.workout.findFirst({
+      where: { id, userId: request.userId },
+      include: { sets: true },
+    });
+    if (!workout) {
+      return reply.code(404).send({ error: 'Workout not found' });
+    }
+    return reply.send(workout);
+  } catch (error) {
+    app.log.error(error);
+    return reply.code(500).send({ error: 'Failed to fetch workout' });
+  }
+});
+
 // 2. Nutrition Upsert Endpoint
 app.post('/api/nutrition/log', { preHandler: authenticate }, async (request, reply) => {
   const { date, calories, proteinG, carbsG, fatG } = request.body;

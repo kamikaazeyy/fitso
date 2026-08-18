@@ -42,8 +42,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="analytics"
         options={{
-          title: 'Nutrition',
-          tabBarIcon: ({ color, size }) => <Ionicons name="nutrition" size={size} color={color} />,
+          title: 'Progress',
+          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

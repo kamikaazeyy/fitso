@@ -10,12 +10,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { client } from '@/src/api/client';
 
 export default function CreateRoutineScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { pendingExercise, consumePendingExercise } = useWorkout();
 
   const [name, setName] = useState('');
@@ -61,6 +63,7 @@ export default function CreateRoutineScreen() {
           },
         ],
       });
+      queryClient.invalidateQueries({ queryKey: ['routines'] });
       router.back();
     } catch (err) {
       Alert.alert('Failed to save', err instanceof Error ? err.message : 'Could not save routine');
