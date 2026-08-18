@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,12 +11,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { getAttachmentsForEquipment } from '@/constants/attachments';
 import { client } from '@/src/api/client';
+import { useWorkouts, type WorkoutWithSets } from '@/src/hooks/useWorkouts';
 
 interface Set {
   id: string;
@@ -48,10 +50,25 @@ function formatTime(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+function findPreviousSet(workouts: WorkoutWithSets[] | undefined, exerciseName: string, setNumber: number): string {
+  if (!workouts) return '';
+  for (const w of workouts) {
+    const match = w.sets.find(
+      (s) => s.exerciseName === exerciseName && s.setNumber === setNumber && s.completed
+    );
+    if (match) {
+      return `${match.weightKg}kg × ${match.reps}`;
+    }
+  }
+  return '';
+}
+
 export default function WorkoutScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { splitId, routineId } = useLocalSearchParams<{ splitId?: string; routineId?: string }>();
   const { pendingExercise, consumePendingExercise } = useWorkout();
+  const { data: historyWorkouts } = useWorkouts(20, 0);
 
   const [workout, setWorkout] = useState<Workout | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +77,7 @@ export default function WorkoutScreen() {
   const [running, setRunning] = useState(false);
   const [pickingExerciseId, setPickingExerciseId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const startedRef = useRef(false);
 
   // Load split or start empty
   useEffect(() => {
@@ -82,9 +100,10 @@ export default function WorkoutScreen() {
         const exercises: Exercise[] = (split.exercises || []).map((ex: any, idx: number) => {
           const attachments = getAttachmentsForEquipment(ex.equipment || []);
           const defaultAttachment = ex.attachment || attachments[0]?.name || 'No attachment';
+          const exerciseName = ex.exerciseName;
           return {
             id: `e-${Date.now()}-${idx}`,
-            name: ex.exerciseName,
+            name: exerciseName,
             wgerId: ex.wgerId,
             equipment: ex.equipment || [],
             attachment: defaultAttachment,
@@ -92,7 +111,7 @@ export default function WorkoutScreen() {
               {
                 id: `s-${Date.now()}-${idx}`,
                 number: 1,
-                previous: '',
+                previous: findPreviousSet(historyWorkouts, exerciseName, 1),
                 weight: '',
                 reps: '',
                 isCompleted: false,
@@ -106,6 +125,7 @@ export default function WorkoutScreen() {
           durationSeconds: 0,
           exercises,
         });
+        startedRef.current = false;
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Failed to load split');
@@ -119,6 +139,14 @@ export default function WorkoutScreen() {
     const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(interval);
   }, [running]);
+
+  // Auto-start once workout is loaded
+  useEffect(() => {
+    if (workout && !isLoading && !startedRef.current) {
+      startedRef.current = true;
+      setRunning(true);
+    }
+  }, [workout, isLoading]);
 
   // Consume exercise added from picker
   const addExercise = useCallback((pending: PendingExercise) => {
@@ -137,7 +165,7 @@ export default function WorkoutScreen() {
           {
             id: `s-${timestamp}`,
             number: 1,
-            previous: '',
+            previous: findPreviousSet(historyWorkouts, pending.name, 1),
             weight: '',
             reps: '',
             isCompleted: false,
@@ -146,7 +174,7 @@ export default function WorkoutScreen() {
       };
       return { ...prev, exercises: [...prev.exercises, newExercise] };
     });
-  }, []);
+  }, [historyWorkouts]);
 
   useEffect(() => {
     const pending = consumePendingExercise();
@@ -163,10 +191,16 @@ export default function WorkoutScreen() {
         exercises: prev.exercises.map((ex) => {
           if (ex.id !== exerciseId) return ex;
           const lastSet = ex.sets[ex.sets.length - 1];
+          const setNumber = ex.sets.length + 1;
+          const historyPrevious = findPreviousSet(historyWorkouts, ex.name, setNumber);
           const newSet: Set = {
             id: `s-${Date.now()}`,
-            number: ex.sets.length + 1,
-            previous: lastSet ? `${lastSet.weight}kg x ${lastSet.reps}` : '',
+            number: setNumber,
+            previous:
+              historyPrevious ||
+              (lastSet && (lastSet.weight || lastSet.reps)
+                ? `${lastSet.weight}kg x ${lastSet.reps}`
+                : ''),
             weight: '',
             reps: '',
             isCompleted: false,
@@ -255,6 +289,9 @@ export default function WorkoutScreen() {
         sets,
         splitId: splitId ?? null,
       });
+      queryClient.invalidateQueries({ queryKey: ['workouts'] });
+      queryClient.invalidateQueries({ queryKey: ['routines'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       router.back();
     } catch (err) {
       setSaving(false);
