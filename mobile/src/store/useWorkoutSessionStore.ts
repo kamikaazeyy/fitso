@@ -330,11 +330,15 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
           await db.writeTransaction(async (tx) => {
             await tx.execute(
               `INSERT INTO ${WORKOUTS_TABLE}
-                 (id, routine_id, title, started_at, finished_at, duration_seconds, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                 (id, user_id, routine_id, split_id, title, started_at, finished_at, duration_seconds, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 workoutId,
+                // user_id is set by the sync layer from the JWT; use a placeholder
+                // that PowerSync will replace on sync
+                '',
                 routineId,
+                null,
                 title,
                 startedAt,
                 new Date(finishedAt).toISOString(),
@@ -347,18 +351,21 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
               for (const entry of exercise.sets) {
                 await tx.execute(
                   `INSERT INTO ${WORKOUT_SETS_TABLE}
-                     (id, workout_id, exercise_id, order_index, set_type, weight, reps, rpe, is_completed, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                     (id, workout_id, exercise_name, wger_id, order_index, set_number, set_type, weight, reps, rpe, is_completed, attachment, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     entry.id,
                     workoutId,
-                    exercise.exerciseId,
+                    exercise.name,
+                    exercise.wgerId ?? null,
+                    entry.setIndex,
                     entry.setIndex,
                     entry.setType,
                     entry.weight,
                     entry.reps,
                     entry.rpe,
                     entry.isCompleted ? 1 : 0,
+                    exercise.attachment ?? null,
                     createdAt,
                   ]
                 );

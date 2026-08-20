@@ -1,0 +1,44 @@
+_type: self-hosted
+
+telemetry:
+  disable_telemetry_sharing: true
+
+# Source database replication
+replication:
+  connections:
+    - type: postgresql
+      uri: postgresql://fitso:fitso-secret@postgres:5432/fitso
+      sslmode: disable
+
+# Bucket storage (using Postgres on the same instance, separate schema)
+storage:
+  type: postgresql
+  uri: postgresql://fitso:fitso-secret@postgres:5432/fitso
+  sslmode: disable
+
+# PowerSync API server port
+port: 8080
+
+# Sync rules / streams
+sync_config:
+  path: sync-config.yaml
+
+# Client authentication — verify JWTs signed with our RSA private key
+client_auth:
+  jwks:
+    keys:
+      - kty: "RSA"
+        n: "uT0eCpZbtfPNquHJzSMjMxoTSAmZWfPC_zOHYafk4A_A0X_1y2Lh6mmC9Zg_meR__YidxqEZBUlUs2Ua1U4e7t9pLIWk1f-YVOEY5Opib1XpWz7SPp9FBkKUTVK54af8bbJ9y_F-i4YTx8_8d0I63BjwJA_ndoPTCBJpyQajhH3ki_-NPpGg6vJdhg0ro591JyXq8Kg7xwQ5Yu7xXn4LMe38yhNozBdNsijEaR_UBkmM2Bm1XAwKMx1Uzq980rhkzk9jsbKHTsbz3sL0uhP-yMpfo-UmoyZge_lgLjbwS9yEw3nlUSqnzM5K7PdXUoZY9-aS6-iOz-AGpSFElL6UnQ"
+        e: "AQAB"
+        alg: "RS256"
+        kid: "fitso-jwt-key-1"
+  audience: ["powersync"]
+
+api:
+  tokens:
+    - fitso-admin-token-dev-only
+
+system:
+  logging:
+    level: info
+    format: text

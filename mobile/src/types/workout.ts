@@ -9,7 +9,7 @@ export const SET_TYPE_LABELS: Record<SetType, string> = {
   FAILURE: 'F',
 };
 
-/** An exercise definition (from the local `exercises` table or the wger catalogue). */
+/** An exercise definition (from the local `routine_exercises` table or the wger catalogue). */
 export interface Exercise {
   id: string;
   name: string;

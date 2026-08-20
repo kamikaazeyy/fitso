@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const Fastify = require('fastify');
 const cors = require('@fastify/cors');
 const { PrismaClient } = require('@prisma/client');
@@ -7,14 +9,18 @@ const jwt = require('jsonwebtoken');
 const app = Fastify({ logger: true });
 const prisma = new PrismaClient();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'fitso-dev-secret-change-me';
+// Load RSA private key for RS256 JWT signing
+const PRIVATE_KEY_PATH = path.join(__dirname, 'keys', 'jwt-private.pem');
+const JWT_PRIVATE_KEY = fs.existsSync(PRIVATE_KEY_PATH)
+  ? fs.readFileSync(PRIVATE_KEY_PATH, 'utf8')
+  : process.env.JWT_SECRET || 'fitso-dev-secret-change-me';
 
-// Temporary dev user ID for unauthenticated requests during rollout
-let DEV_USER_ID = null;
+const JWT_ALGORITHM = JWT_PRIVATE_KEY.includes('BEGIN') ? 'RS256' : 'HS256';
+const JWT_AUDIENCE = 'powersync';
 
 app.register(cors, { origin: '*' });
 
-// Health checks (Keeps the Tailscale ping test working)
+// Health checks
 app.get('/health', async () => ({ status: 'ok', server: 'fastify-prisma' }));
 app.get('/health/live', async () => ({ status: 'alive' }));
 
@@ -24,8 +30,11 @@ async function authenticate(request, reply) {
 
   if (token) {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      request.userId = decoded.userId;
+      const decoded = jwt.verify(token, JWT_PRIVATE_KEY, {
+        algorithms: [JWT_ALGORITHM],
+        audience: JWT_AUDIENCE,
+      });
+      request.userId = decoded.sub || decoded.userId;
       return;
     } catch (err) {
       app.log.warn('Invalid token:', err.message);
@@ -33,17 +42,15 @@ async function authenticate(request, reply) {
     }
   }
 
-  // Fallback to the dev user for legacy/unauthenticated requests
-  if (DEV_USER_ID) {
-    request.userId = DEV_USER_ID;
-    return;
-  }
-
   return reply.code(401).send({ error: 'Unauthorized' });
 }
 
 function createToken(userId) {
-  return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ sub: userId, aud: JWT_AUDIENCE }, JWT_PRIVATE_KEY, {
+    algorithm: JWT_ALGORITHM,
+    expiresIn: '24h',
+    keyid: 'fitso-jwt-key-1',
+  });
 }
 
 // Auth: Sign Up
@@ -116,29 +123,50 @@ app.post('/api/auth/login', async (request, reply) => {
   }
 });
 
+// Auth: Verify token (used by mobile app to validate stored tokens)
+app.get('/api/auth/verify', { preHandler: authenticate }, async (request, reply) => {
+  const user = await prisma.user.findUnique({
+    where: { id: request.userId },
+    select: { id: true, email: true, name: true, dailyCalorieGoal: true },
+  });
+  if (!user) {
+    return reply.code(404).send({ error: 'User not found' });
+  }
+  return reply.send({ user });
+});
+
 // 1. Post Workout Endpoint
 app.post('/api/workouts', { preHandler: authenticate }, async (request, reply) => {
-  const { title, durationSeconds, sets, splitId } = request.body;
+  const { title, durationSeconds, sets, splitId, routineId, startedAt, finishedAt } = request.body;
 
   try {
     const workout = await prisma.workout.create({
       data: {
         userId: request.userId,
+        routineId: routineId || null,
+        splitId: splitId || null,
         title: title || 'Workout',
         durationSeconds: durationSeconds || 0,
+        startedAt: startedAt ? new Date(startedAt) : new Date(),
+        finishedAt: finishedAt ? new Date(finishedAt) : new Date(),
         sets: {
-          create: sets.map(s => ({
-            exerciseName: s.exerciseName,
-            wgerId: s.wgerId || null,
-            setNumber: s.setNumber,
-            weightKg: parseFloat(s.weightKg) || 0,
-            reps: parseInt(s.reps, 10) || 0,
-            completed: s.completed !== false,
-            attachment: s.attachment || null
-          }))
-        }
+          create: sets
+            .filter((s) => s.weight !== undefined || s.reps !== undefined || s.isCompleted)
+            .map((s, idx) => ({
+              exerciseName: s.exerciseName,
+              wgerId: s.wgerId || null,
+              orderIndex: s.orderIndex ?? idx,
+              setNumber: s.setNumber ?? idx + 1,
+              setType: s.setType || 'NORMAL',
+              weight: parseFloat(s.weight) || 0,
+              reps: parseInt(s.reps, 10) || 0,
+              rpe: s.rpe ? parseFloat(s.rpe) : null,
+              isCompleted: s.isCompleted !== false,
+              attachment: s.attachment || null,
+            })),
+        },
       },
-      include: { sets: true }
+      include: { sets: true },
     });
     return reply.code(201).send(workout);
   } catch (error) {
@@ -157,7 +185,7 @@ app.get('/api/workouts', { preHandler: authenticate }, async (request, reply) =>
     const workouts = await prisma.workout.findMany({
       where: { userId: request.userId },
       include: { sets: true },
-      orderBy: { completedAt: 'desc' },
+      orderBy: { finishedAt: 'desc' },
       take,
       skip,
     });
@@ -196,8 +224,8 @@ app.post('/api/nutrition/log', { preHandler: authenticate }, async (request, rep
       where: {
         userId_logDate: {
           userId: request.userId,
-          logDate: logDate
-        }
+          logDate: logDate,
+        },
       },
       update: {
         calories: { increment: calories || 0 },
@@ -212,7 +240,7 @@ app.post('/api/nutrition/log', { preHandler: authenticate }, async (request, rep
         proteinG: proteinG || 0,
         carbsG: carbsG || 0,
         fatG: fatG || 0,
-      }
+      },
     });
     return reply.send(nutrition);
   } catch (error) {
@@ -229,19 +257,19 @@ app.get('/api/dashboard/today', { preHandler: authenticate }, async (request, re
   try {
     const nutrition = await prisma.nutritionLog.findUnique({
       where: {
-        userId_logDate: { userId: request.userId, logDate: queryDateUTC }
-      }
+        userId_logDate: { userId: request.userId, logDate: queryDateUTC },
+      },
     });
 
     const recentWorkouts = await prisma.workout.findMany({
       where: { userId: request.userId },
-      orderBy: { completedAt: 'desc' },
-      take: 3
+      orderBy: { finishedAt: 'desc' },
+      take: 3,
     });
 
     return reply.send({
       nutrition: nutrition || { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
-      recentWorkouts
+      recentWorkouts,
     });
   } catch (error) {
     app.log.error(error);
@@ -258,15 +286,15 @@ app.get('/api/routines', { preHandler: authenticate }, async (request, reply) =>
       where: { userId: request.userId },
       include: {
         splits: {
-          orderBy: { order: 'asc' },
+          orderBy: { orderIndex: 'asc' },
           include: {
             exercises: {
-              orderBy: { order: 'asc' }
-            }
-          }
-        }
+              orderBy: { orderIndex: 'asc' },
+            },
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
     return reply.send(routines);
   } catch (error) {
@@ -283,14 +311,14 @@ app.get('/api/routines/:id', { preHandler: authenticate }, async (request, reply
       where: { id, userId: request.userId },
       include: {
         splits: {
-          orderBy: { order: 'asc' },
+          orderBy: { orderIndex: 'asc' },
           include: {
             exercises: {
-              orderBy: { order: 'asc' }
-            }
-          }
-        }
-      }
+              orderBy: { orderIndex: 'asc' },
+            },
+          },
+        },
+      },
     });
     if (!routine) {
       return reply.code(404).send({ error: 'Routine not found' });
@@ -304,7 +332,7 @@ app.get('/api/routines/:id', { preHandler: authenticate }, async (request, reply
 
 // Create a routine with splits and exercises
 app.post('/api/routines', { preHandler: authenticate }, async (request, reply) => {
-  const { name, splits } = request.body || {};
+  const { name, notes, splits } = request.body || {};
 
   if (!name || !Array.isArray(splits) || splits.length === 0) {
     return reply.code(400).send({ error: 'Routine name and at least one split are required' });
@@ -315,27 +343,32 @@ app.post('/api/routines', { preHandler: authenticate }, async (request, reply) =
       data: {
         userId: request.userId,
         name,
+        notes: notes || null,
         splits: {
           create: splits.map((split, splitIndex) => ({
             name: split.name || `Split ${splitIndex + 1}`,
-            order: splitIndex,
+            orderIndex: split.orderIndex ?? splitIndex,
             exercises: {
               create: (split.exercises || []).map((ex, exIndex) => ({
                 wgerId: ex.wgerId || null,
                 exerciseName: ex.exerciseName,
                 equipment: ex.equipment || [],
                 attachment: ex.attachment || null,
-                order: exIndex
-              }))
-            }
-          }))
-        }
+                orderIndex: ex.orderIndex ?? exIndex,
+                targetSets: ex.targetSets || null,
+                targetReps: ex.targetReps || null,
+                targetWeight: ex.targetWeight ? parseFloat(ex.targetWeight) : null,
+                restSeconds: ex.restSeconds || null,
+              })),
+            },
+          })),
+        },
       },
       include: {
         splits: {
-          include: { exercises: true }
-        }
-      }
+          include: { exercises: true },
+        },
+      },
     });
     return reply.code(201).send(routine);
   } catch (error) {
@@ -363,17 +396,8 @@ app.delete('/api/routines/:id', { preHandler: authenticate }, async (request, re
 // Bootstrap Server
 const start = async () => {
   try {
-    let devUser = await prisma.user.findFirst();
-    if (!devUser) {
-      devUser = await prisma.user.create({
-        data: { email: 'dev@fitso.app', name: 'Developer', dailyCalorieGoal: 2500 }
-      });
-      app.log.info(`Created dev user: ${devUser.id}`);
-    }
-    DEV_USER_ID = devUser.id;
-
     await app.listen({ port: 3000, host: '0.0.0.0' });
-    app.log.info(`Server running on port 3000`);
+    app.log.info(`Server running on port 3000 (JWT: ${JWT_ALGORITHM})`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
