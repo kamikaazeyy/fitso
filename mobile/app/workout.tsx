@@ -27,6 +27,17 @@ function formatTime(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+/** Safely parses the equipment JSON string stored in SQLite; returns [] on failure. */
+function parseEquipment(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Fetch previous set data from local SQLite for "previous" hints. */
 function usePreviousSetHints(exercises: ActiveExercise[]) {
   const db = usePowerSync();
@@ -90,6 +101,7 @@ export default function WorkoutScreen() {
   const setAttachmentInStore = useWorkoutSessionStore((s) => s.setAttachment);
   const finishWorkout = useWorkoutSessionStore((s) => s.finishWorkout);
   const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
+  const setSplitIdInStore = useWorkoutSessionStore((s) => s.setSplitId);
 
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
@@ -114,6 +126,7 @@ export default function WorkoutScreen() {
     if (!splitId || !routineId) {
       // Quick workout — start empty session
       if (!isActive) {
+        setSplitIdInStore(null);
         startWorkout();
       }
       startedRef.current = true;
@@ -180,12 +193,13 @@ export default function WorkoutScreen() {
             targetWeight: ex.target_weight ? Number(ex.target_weight) : undefined,
             restSeconds: ex.rest_seconds ?? undefined,
             wgerId: ex.wger_id ?? undefined,
-            equipment: ex.equipment ? JSON.parse(ex.equipment) : [],
+            equipment: parseEquipment(ex.equipment),
             attachment: ex.attachment ?? undefined,
           })),
         };
 
         startWorkout(routineForStore);
+        setSplitIdInStore(splitId);
         startedRef.current = true;
         setRunning(true);
         setIsLoading(false);
@@ -196,7 +210,7 @@ export default function WorkoutScreen() {
     };
 
     loadRoutine();
-  }, [splitId, routineId, isActive, startWorkout, db]);
+  }, [splitId, routineId, isActive, startWorkout, setSplitIdInStore, db]);
 
   // Timer
   useEffect(() => {

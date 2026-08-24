@@ -45,9 +45,12 @@ function buildFifteenSetSession(): void {
   });
 }
 
+const TEST_USER_ID = 'test-user-uuid';
+
 beforeEach(() => {
   new MMKV().clearAll();
   resetSession(store);
+  store.getState().setUserId(TEST_USER_ID);
   jest.clearAllMocks();
   db = createFakePowerSyncDatabase();
   jest.mocked(getPowerSyncDatabase).mockReturnValue(db as never);
@@ -75,6 +78,23 @@ describe('finishWorkout (offline)', () => {
     expect(setInserts).toHaveLength(15);
     expect(setInserts.every((statement) => statement.params[1] === workoutId)).toBe(true);
     expect(network).not.toHaveBeenCalled();
+  });
+
+  it('writes the authenticated user id into the workout row, not an empty string', async () => {
+    buildFifteenSetSession();
+    await store.getState().finishWorkout();
+
+    const [workoutInsert] = insertsInto(db, WORKOUTS_TABLE);
+    // params[1] is user_id — must be the real user id, not ''
+    expect(workoutInsert.params[1]).toBe(TEST_USER_ID);
+  });
+
+  it('throws if no user id is set (unauthenticated)', async () => {
+    store.getState().setUserId(null);
+    buildFifteenSetSession();
+
+    await expect(store.getState().finishWorkout()).rejects.toThrow('not authenticated');
+    expect(db.transactionCount).toBe(0);
   });
 
   it('persists set values, types and completion flags as SQLite-friendly params', async () => {

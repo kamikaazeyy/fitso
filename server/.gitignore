@@ -5,3 +5,4 @@ npm-debug.log
 !.env.example
 .git
 keys/
+data/

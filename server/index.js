@@ -393,6 +393,185 @@ app.delete('/api/routines/:id', { preHandler: authenticate }, async (request, re
   }
 });
 
+// 5. PowerSync sync upload — applies local CRUD operations to Postgres
+//
+// PowerSync's sync protocol handles the download direction (server → client)
+// automatically. The upload direction (client → server) is the connector's
+// job: the mobile app's `uploadData` POSTs a batch of CRUD operations here,
+// and this endpoint applies them to Postgres via Prisma. Once applied,
+// PowerSync's logical replication picks them up and streams them back down
+// to all of the user's devices.
+
+const TABLE_TO_PRISMA = {
+  workouts: 'workout',
+  workout_sets: 'workoutSet',
+  routines: 'routine',
+  splits: 'split',
+  routine_exercises: 'routineExercise',
+};
+
+const COLUMN_MAP = {
+  id: 'id',
+  user_id: 'userId',
+  routine_id: 'routineId',
+  split_id: 'splitId',
+  workout_id: 'workoutId',
+  exercise_name: 'exerciseName',
+  wger_id: 'wgerId',
+  order_index: 'orderIndex',
+  set_number: 'setNumber',
+  set_type: 'setType',
+  is_completed: 'isCompleted',
+  target_sets: 'targetSets',
+  target_reps: 'targetReps',
+  target_weight: 'targetWeight',
+  rest_seconds: 'restSeconds',
+  started_at: 'startedAt',
+  finished_at: 'finishedAt',
+  duration_seconds: 'durationSeconds',
+  created_at: 'createdAt',
+  updated_at: 'updatedAt',
+  title: 'title',
+  name: 'name',
+  notes: 'notes',
+  weight: 'weight',
+  reps: 'reps',
+  rpe: 'rpe',
+  attachment: 'attachment',
+  equipment: 'equipment',
+};
+
+// Tables that have a direct userId column — the server overrides this field
+// with the authenticated user's id to prevent cross-user writes.
+const TABLES_WITH_USER_ID = new Set(['workouts', 'routines']);
+
+// Fields that are NOT nullable in the Prisma schema but may arrive as null
+// from SQLite (the user left the field empty). Coerce to the schema default
+// so Prisma doesn't reject the upsert.
+const NON_NULLABLE_DEFAULTS = {
+  weight: 0,
+  reps: 0,
+  is_completed: false,
+  set_type: 'NORMAL',
+  order_index: 0,
+  set_number: 0,
+  duration_seconds: 0,
+};
+
+function transformOpData(table, opData) {
+  const transformed = {};
+  for (const [key, value] of Object.entries(opData)) {
+    const prismaKey = COLUMN_MAP[key] || key;
+    let transformedValue = value;
+
+    // Coerce null to the schema default for non-nullable fields
+    if (transformedValue === null && key in NON_NULLABLE_DEFAULTS) {
+      transformedValue = NON_NULLABLE_DEFAULTS[key];
+    }
+
+    // SQLite stores booleans as 0/1; Prisma expects true/false
+    if (key === 'is_completed') {
+      transformedValue = transformedValue === 1 || transformedValue === true;
+    }
+
+    // SQLite stores String[] as a JSON string; Prisma expects an array
+    if (key === 'equipment' && typeof transformedValue === 'string') {
+      try {
+        transformedValue = JSON.parse(transformedValue);
+      } catch {
+        transformedValue = [];
+      }
+    }
+
+    // SQLite stores dates as ISO strings; convert to Date for Prisma
+    if (typeof transformedValue === 'string' && (key.endsWith('_at') || key === 'logDate')) {
+      const parsed = new Date(transformedValue);
+      if (!Number.isNaN(parsed.getTime())) {
+        transformedValue = parsed;
+      }
+    }
+
+    transformed[prismaKey] = transformedValue;
+  }
+  return transformed;
+}
+
+app.post('/api/sync/upload', { preHandler: authenticate }, async (request, reply) => {
+  const { operations } = request.body || {};
+  if (!Array.isArray(operations) || operations.length === 0) {
+    return reply.send({ applied: 0 });
+  }
+
+  let applied = 0;
+  const errors = [];
+
+  for (const op of operations) {
+    const { table, op: opType, id, data } = op;
+    const modelName = TABLE_TO_PRISMA[table];
+
+    if (!modelName) {
+      errors.push({ id, table, error: `Unknown table: ${table}` });
+      continue;
+    }
+
+    const prismaModel = prisma[modelName];
+    let opData = transformOpData(table, data || {});
+
+    // Security: override userId with the authenticated user's id so a
+    // compromised client can't write data to another user's account.
+    if (TABLES_WITH_USER_ID.has(table)) {
+      opData.userId = request.userId;
+    }
+
+    try {
+      if (opType === 'PUT') {
+        // Upsert (INSERT or replace)
+        await prismaModel.upsert({
+          where: { id },
+          create: { ...opData, id },
+          update: opData,
+        });
+      } else if (opType === 'PATCH') {
+        // Use upsert so a PATCH on a not-yet-inserted row doesn't throw P2025.
+        // This can happen if operations are reordered or retried.
+        await prismaModel.upsert({
+          where: { id },
+          create: { ...opData, id },
+          update: opData,
+        });
+      } else if (opType === 'DELETE') {
+        try {
+          await prismaModel.delete({
+            where: { id },
+          });
+        } catch (deleteError) {
+          // P2025 = record not found — it's already gone, which is the
+          // desired state. Treat as success instead of poisoning the queue.
+          if (deleteError.code !== 'P2025') throw deleteError;
+        }
+      } else {
+        errors.push({ id, table, error: `Unknown op: ${opType}` });
+        continue;
+      }
+      applied += 1;
+    } catch (error) {
+      // P2025 on update = record not found; treat as success (already deleted
+      // or never existed — the desired state has been reached).
+      if (error.code === 'P2025') {
+        applied += 1;
+        continue;
+      }
+      app.log.error({ err: error.message, table, opType, id }, 'sync upload operation failed');
+      errors.push({ id, table, error: error.message });
+    }
+  }
+
+  if (errors.length > 0) {
+    return reply.code(500).send({ applied, errors });
+  }
+  return reply.send({ applied });
+});
+
 // Bootstrap Server
 const start = async () => {
   try {

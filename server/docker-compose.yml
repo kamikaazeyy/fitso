@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fitso-secret}
       POSTGRES_DB: ${POSTGRES_DB:-fitso}
     volumes:
-      - /opt/fitso/data/postgres/data:/var/lib/postgresql/data
+      - ./data/postgres:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
@@ -21,6 +21,9 @@ services:
       - fitso-net
 
   backend:
+    # Use the pre-built GHCR image on the server; fall back to local build
+    # for development. Set BACKEND_IMAGE to override (CI/CD sets this).
+    image: ${BACKEND_IMAGE:-ghcr.io/kamikaazeyy/fitso-backend:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -68,8 +71,8 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - /opt/fitso/data/caddy/data:/data
-      - /opt/fitso/data/caddy/config:/config
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
     depends_on:
       - backend
       - powersync

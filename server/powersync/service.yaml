@@ -28,7 +28,7 @@ client_auth:
   jwks:
     keys:
       - kty: "RSA"
-        n: "uT0eCpZbtfPNquHJzSMjMxoTSAmZWfPC_zOHYafk4A_A0X_1y2Lh6mmC9Zg_meR__YidxqEZBUlUs2Ua1U4e7t9pLIWk1f-YVOEY5Opib1XpWz7SPp9FBkKUTVK54af8bbJ9y_F-i4YTx8_8d0I63BjwJA_ndoPTCBJpyQajhH3ki_-NPpGg6vJdhg0ro591JyXq8Kg7xwQ5Yu7xXn4LMe38yhNozBdNsijEaR_UBkmM2Bm1XAwKMx1Uzq980rhkzk9jsbKHTsbz3sL0uhP-yMpfo-UmoyZge_lgLjbwS9yEw3nlUSqnzM5K7PdXUoZY9-aS6-iOz-AGpSFElL6UnQ"
+        n: "pWG183ezfnsF6Dj5J4hPAY1vT4fxfTaOGxkLpyABxLKfFe0Ltzla_0npFXHde-P6jsHG2bftiyClr-i0bNurco5VbZMq3wVuh8CKb95pyYYcVdh_FlM5_FED8bAeEBmsLNt9cx0a3gh_6wlPwQi1b6yUnm4Njf1GvGd29NUOtab6uL7TDlzaxTLri0ttKv0zTFlWOZwvVX7HJmtrG9835WMY1fT1IOF1YLQ5vO3_cpDdCofaiKzo63Xx3sGiGzrOxJ5fOsgJcLZ4mtUWps4p7AFSk_NKSt7qtjNkONHDTsCO-9lxe4Kt6OJET53HbG87s1kKI_01qjLBcQuKv7gjJw"
         e: "AQAB"
         alg: "RS256"
         kid: "fitso-jwt-key-1"

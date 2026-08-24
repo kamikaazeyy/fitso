@@ -1,6 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { usePowerSync } from '@powersync/react-native';
 
+function safeParseEquipment(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export interface RoutineExercise {
   id: string;
   wgerId: number | null;
@@ -61,7 +70,7 @@ export function useRoutines() {
               id: ex.id,
               wgerId: ex.wger_id ?? null,
               exerciseName: ex.exercise_name,
-              equipment: ex.equipment ? JSON.parse(ex.equipment) : [],
+              equipment: ex.equipment ? safeParseEquipment(ex.equipment) : [],
               attachment: ex.attachment ?? null,
               order: ex.order_index,
             })),

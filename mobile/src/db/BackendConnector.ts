@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import type { PowerSyncBackendConnector, PowerSyncCredentials } from '@powersync/react-native';
+import { client } from '@/src/api/client';
 
 const SYNC_ENDPOINT =
   process.env.EXPO_PUBLIC_POWERSYNC_URL ||
@@ -25,20 +26,32 @@ export class BackendConnector implements PowerSyncBackendConnector {
     };
   }
 
+  /**
+   * Uploads local writes to the backend. PowerSync's sync protocol handles
+   * the download direction (server → client) automatically, but the upload
+   * direction (client → server) is our responsibility. We grab the pending
+   * CRUD batch, POST it to the Fastify `/api/sync/upload` endpoint which
+   * applies the operations to Postgres, then mark the batch as complete so
+   * PowerSync knows it's been processed. If the upload fails, we throw so
+   * PowerSync retries after its configured backoff.
+   */
   async uploadData(database: any): Promise<void> {
-    // PowerSync's built-in replication handles local INSERT/UPDATE/DELETE
-    // automatically via the sync protocol. This method is called when there
-    // are local-only writes that need to be sent to the server.
-    //
-    // For MVP, we rely on the automatic replication — the sync server pushes
-    // local changes to Postgres and pulls server changes down to the device.
-    // If server-side validation or transforms are needed later, use
-    // `database.getCrudBatch()` here to get the pending changes and POST them
-    // to a Fastify endpoint.
     const batch = await database.getCrudBatch();
     if (!batch) return;
-    // No custom upload — let PowerSync handle it via the sync protocol.
-    // Mark the batch as done so PowerSync knows it's been processed.
+
+    const operations = batch.crud.map((op: any) => ({
+      table: op.table,
+      op: op.op,
+      id: op.id,
+      data: op.opData,
+    }));
+
+    const response = await client.post('/api/sync/upload', { operations });
+
+    if (response.status !== 200) {
+      throw new Error(`Sync upload failed: HTTP ${response.status}`);
+    }
+
     await batch.complete();
   }
 

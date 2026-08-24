@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import * as SecureStore from 'expo-secure-store';
 import { client, setAuthToken } from '@/src/api/client';
 import { connectPowerSync, disconnectPowerSync } from '@/src/db/PowerSyncProvider';
+import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 
 export interface User {
   id: string;
@@ -39,7 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthToken(storedToken);
         }
         if (storedUser) {
-          setUser(JSON.parse(storedUser));
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          useWorkoutSessionStore.getState().setUserId(parsedUser.id);
         }
       } finally {
         setIsLoading(false);
@@ -54,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(newToken);
     setUser(newUser);
     setAuthToken(newToken);
+    useWorkoutSessionStore.getState().setUserId(newUser.id);
     // Connect PowerSync sync engine with the new token
     connectPowerSync(newToken).catch((err) => {
       console.warn('[Auth] Failed to connect PowerSync after login', err);
@@ -95,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
     setAuthToken(null);
+    useWorkoutSessionStore.getState().setUserId(null);
     await disconnectPowerSync().catch(() => undefined);
   }, []);
 
