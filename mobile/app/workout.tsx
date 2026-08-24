@@ -17,32 +17,9 @@ import { LoadableContainer } from '@/components/LoadableContainer';
 import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { getAttachmentsForEquipment } from '@/constants/attachments';
-import { client } from '@/src/api/client';
-import { useWorkouts, type WorkoutWithSets } from '@/src/hooks/useWorkouts';
-
-interface Set {
-  id: string;
-  number: number;
-  previous: string;
-  weight: string;
-  reps: string;
-  isCompleted: boolean;
-}
-
-interface Exercise {
-  id: string;
-  name: string;
-  wgerId?: number;
-  equipment: string[];
-  attachment: string;
-  sets: Set[];
-}
-
-interface Workout {
-  title: string;
-  durationSeconds: number;
-  exercises: Exercise[];
-}
+import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { usePowerSync } from '@powersync/react-native';
+import type { ActiveExercise, ActiveSet, Routine } from '@/src/types/workout';
 
 function formatTime(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -50,131 +27,209 @@ function formatTime(totalSeconds: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function findPreviousSet(workouts: WorkoutWithSets[] | undefined, exerciseName: string, setNumber: number): string {
-  if (!workouts) return '';
-  for (const w of workouts) {
-    const match = w.sets.find(
-      (s) => s.exerciseName === exerciseName && s.setNumber === setNumber && s.completed
-    );
-    if (match) {
-      return `${match.weightKg}kg × ${match.reps}`;
-    }
+/** Safely parses the equipment JSON string stored in SQLite; returns [] on failure. */
+function parseEquipment(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
-  return '';
+}
+
+/** Fetch previous set data from local SQLite for "previous" hints. */
+function usePreviousSetHints(exercises: ActiveExercise[]) {
+  const db = usePowerSync();
+  const [hints, setHints] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const loadHints = async () => {
+      const newHints: Record<string, string> = {};
+      for (const ex of exercises) {
+        try {
+          const result = await db.execute(
+            `SELECT ws.weight, ws.reps, ws.set_number
+             FROM ${'workout_sets'} ws
+             WHERE ws.exercise_name = ?
+               AND ws.is_completed = 1
+             ORDER BY ws.created_at DESC
+             LIMIT 10`,
+            [ex.name]
+          );
+          if (result.rows && result.rows.length > 0) {
+            for (const row of result.rows._array || []) {
+              const key = `${ex.exerciseId}-${row.set_number}`;
+              if (!newHints[key]) {
+                newHints[key] = `${row.weight}kg × ${row.reps}`;
+              }
+            }
+          }
+        } catch {
+          // DB might not be ready yet — skip silently
+        }
+      }
+      setHints(newHints);
+    };
+
+    if (exercises.length > 0) {
+      loadHints();
+    }
+  }, [db, exercises]);
+
+  return hints;
 }
 
 export default function WorkoutScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const db = usePowerSync();
   const { splitId, routineId } = useLocalSearchParams<{ splitId?: string; routineId?: string }>();
   const { pendingExercise, consumePendingExercise } = useWorkout();
-  const { data: historyWorkouts } = useWorkouts(20, 0);
 
-  const [workout, setWorkout] = useState<Workout | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Store state
+  const isActive = useWorkoutSessionStore((s) => s.isActive);
+  const workoutId = useWorkoutSessionStore((s) => s.workoutId);
+  const title = useWorkoutSessionStore((s) => s.title);
+  const exercises = useWorkoutSessionStore((s) => s.exercises);
+  const isSaving = useWorkoutSessionStore((s) => s.isSaving);
+  const startWorkout = useWorkoutSessionStore((s) => s.startWorkout);
+  const addExerciseToStore = useWorkoutSessionStore((s) => s.addExercise);
+  const addSetToStore = useWorkoutSessionStore((s) => s.addSet);
+  const updateSetInStore = useWorkoutSessionStore((s) => s.updateSet);
+  const toggleSetCompleteInStore = useWorkoutSessionStore((s) => s.toggleSetComplete);
+  const setAttachmentInStore = useWorkoutSessionStore((s) => s.setAttachment);
+  const finishWorkout = useWorkoutSessionStore((s) => s.finishWorkout);
+  const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
+  const setSplitIdInStore = useWorkoutSessionStore((s) => s.setSplitId);
+
   const [elapsed, setElapsed] = useState(0);
   const [running, setRunning] = useState(false);
   const [pickingExerciseId, setPickingExerciseId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const startTime = useWorkoutSessionStore((s) => s.startTime);
 
-  // Load split or start empty
+  const previousHints = usePreviousSetHints(exercises);
+
+  // Start or resume workout
   useEffect(() => {
-    if (!splitId || !routineId) {
-      setWorkout({ title: 'Workout', durationSeconds: 0, exercises: [] });
+    if (isActive && !startedRef.current) {
+      // Session already active (crash recovery or navigation return)
+      startedRef.current = true;
+      setRunning(true);
       setIsLoading(false);
       return;
     }
 
-    client
-      .get(`/api/routines/${routineId}`)
-      .then(({ data }) => {
-        const split = data?.splits?.find((s: any) => s.id === splitId);
+    if (!splitId || !routineId) {
+      // Quick workout — start empty session
+      if (!isActive) {
+        setSplitIdInStore(null);
+        startWorkout();
+      }
+      startedRef.current = true;
+      setRunning(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Load routine from local SQLite and start with it
+    const loadRoutine = async () => {
+      try {
+        // First check if we already have an active session
+        if (isActive) {
+          startedRef.current = true;
+          setRunning(true);
+          setIsLoading(false);
+          return;
+        }
+
+        // Load routine from local SQLite (synced from server)
+        const routineResult = await db.execute(
+          `SELECT * FROM routines WHERE id = ?`,
+          [routineId]
+        );
+        if (!routineResult.rows || routineResult.rows.length === 0) {
+          setError('Routine not found');
+          setIsLoading(false);
+          return;
+        }
+
+        const routine = routineResult.rows._array?.[0] as any;
+
+        // Load splits
+        const splitsResult = await db.execute(
+          `SELECT * FROM splits WHERE routine_id = ? ORDER BY order_index ASC`,
+          [routineId]
+        );
+        const splits = splitsResult.rows?._array || [];
+
+        // Load exercises for the selected split
+        const split = splits.find((s: any) => s.id === splitId);
         if (!split) {
           setError('Split not found');
           setIsLoading(false);
           return;
         }
 
-        const exercises: Exercise[] = (split.exercises || []).map((ex: any, idx: number) => {
-          const attachments = getAttachmentsForEquipment(ex.equipment || []);
-          const defaultAttachment = ex.attachment || attachments[0]?.name || 'No attachment';
-          const exerciseName = ex.exerciseName;
-          return {
-            id: `e-${Date.now()}-${idx}`,
-            name: exerciseName,
-            wgerId: ex.wgerId,
-            equipment: ex.equipment || [],
-            attachment: defaultAttachment,
-            sets: [
-              {
-                id: `s-${Date.now()}-${idx}`,
-                number: 1,
-                previous: findPreviousSet(historyWorkouts, exerciseName, 1),
-                weight: '',
-                reps: '',
-                isCompleted: false,
-              },
-            ],
-          };
-        });
+        const exercisesResult = await db.execute(
+          `SELECT * FROM routine_exercises WHERE split_id = ? ORDER BY order_index ASC`,
+          [split.id]
+        );
+        const splitExercises = exercisesResult.rows?._array || [];
 
-        setWorkout({
-          title: `${data.name} - ${split.name}`,
-          durationSeconds: 0,
-          exercises,
-        });
-        startedRef.current = false;
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : 'Failed to load split');
-      })
-      .finally(() => setIsLoading(false));
-  }, [splitId, routineId]);
+        // Build a Routine object for the store
+        const routineForStore: Routine = {
+          id: routine.id,
+          name: routine.name,
+          exercises: splitExercises.map((ex: any) => ({
+            exerciseId: ex.id,
+            name: ex.exercise_name,
+            orderIndex: ex.order_index,
+            targetSets: ex.target_sets ?? undefined,
+            targetReps: ex.target_reps ?? undefined,
+            targetWeight: ex.target_weight ? Number(ex.target_weight) : undefined,
+            restSeconds: ex.rest_seconds ?? undefined,
+            wgerId: ex.wger_id ?? undefined,
+            equipment: parseEquipment(ex.equipment),
+            attachment: ex.attachment ?? undefined,
+          })),
+        };
+
+        startWorkout(routineForStore);
+        setSplitIdInStore(splitId);
+        startedRef.current = true;
+        setRunning(true);
+        setIsLoading(false);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load routine');
+        setIsLoading(false);
+      }
+    };
+
+    loadRoutine();
+  }, [splitId, routineId, isActive, startWorkout, setSplitIdInStore, db]);
 
   // Timer
   useEffect(() => {
-    if (!running) return;
-    const interval = setInterval(() => setElapsed((e) => e + 1), 1000);
+    if (!running || !startTime) return;
+    const interval = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
     return () => clearInterval(interval);
-  }, [running]);
-
-  // Auto-start once workout is loaded
-  useEffect(() => {
-    if (workout && !isLoading && !startedRef.current) {
-      startedRef.current = true;
-      setRunning(true);
-    }
-  }, [workout, isLoading]);
+  }, [running, startTime]);
 
   // Consume exercise added from picker
   const addExercise = useCallback((pending: PendingExercise) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      const timestamp = Date.now();
-      const attachments = getAttachmentsForEquipment(pending.equipment);
-      const defaultAttachment = attachments[0]?.name || 'No attachment';
-      const newExercise: Exercise = {
-        id: `e-${timestamp}`,
-        name: pending.name,
-        wgerId: pending.wgerId,
-        equipment: pending.equipment,
-        attachment: defaultAttachment,
-        sets: [
-          {
-            id: `s-${timestamp}`,
-            number: 1,
-            previous: findPreviousSet(historyWorkouts, pending.name, 1),
-            weight: '',
-            reps: '',
-            isCompleted: false,
-          },
-        ],
-      };
-      return { ...prev, exercises: [...prev.exercises, newExercise] };
+    addExerciseToStore({
+      id: pending.id,
+      name: pending.name,
+      wgerId: pending.wgerId,
+      equipment: pending.equipment,
     });
-  }, [historyWorkouts]);
+  }, [addExerciseToStore]);
 
   useEffect(() => {
     const pending = consumePendingExercise();
@@ -183,125 +238,45 @@ export default function WorkoutScreen() {
     }
   }, [pendingExercise, consumePendingExercise, addExercise]);
 
-  const addSet = (exerciseId: string) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        exercises: prev.exercises.map((ex) => {
-          if (ex.id !== exerciseId) return ex;
-          const lastSet = ex.sets[ex.sets.length - 1];
-          const setNumber = ex.sets.length + 1;
-          const historyPrevious = findPreviousSet(historyWorkouts, ex.name, setNumber);
-          const newSet: Set = {
-            id: `s-${Date.now()}`,
-            number: setNumber,
-            previous:
-              historyPrevious ||
-              (lastSet && (lastSet.weight || lastSet.reps)
-                ? `${lastSet.weight}kg x ${lastSet.reps}`
-                : ''),
-            weight: '',
-            reps: '',
-            isCompleted: false,
-          };
-          return { ...ex, sets: [...ex.sets, newSet] };
-        }),
-      };
-    });
-  };
-
-  const updateSet = (
-    exerciseId: string,
-    setId: string,
-    field: 'weight' | 'reps',
-    value: string
-  ) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        exercises: prev.exercises.map((ex) =>
-          ex.id === exerciseId
-            ? { ...ex, sets: ex.sets.map((s) => (s.id === setId ? { ...s, [field]: value } : s)) }
-            : ex
-        ),
-      };
-    });
-  };
-
-  const toggleSetCompleted = (exerciseId: string, setId: string) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        exercises: prev.exercises.map((ex) =>
-          ex.id === exerciseId
-            ? {
-                ...ex,
-                sets: ex.sets.map((s) =>
-                  s.id === setId ? { ...s, isCompleted: !s.isCompleted } : s
-                ),
-              }
-            : ex
-        ),
-      };
-    });
-  };
-
-  const updateAttachment = (exerciseId: string, attachment: string) => {
-    setWorkout((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        exercises: prev.exercises.map((ex) =>
-          ex.id === exerciseId ? { ...ex, attachment } : ex
-        ),
-      };
-    });
-  };
-
   const handleFinish = async () => {
-    if (!workout) return;
-    if (workout.exercises.length === 0) {
+    if (!isActive) return;
+    if (exercises.length === 0) {
       Alert.alert('Empty workout', 'Add at least one exercise before finishing.');
       return;
     }
-    setSaving(true);
-    setRunning(false);
-
-    const sets = workout.exercises.flatMap((ex) =>
-      ex.sets.map((set, setIdx) => ({
-        exerciseName: ex.name,
-        wgerId: ex.wgerId || null,
-        setNumber: setIdx + 1,
-        weightKg: set.weight,
-        reps: set.reps,
-        completed: set.isCompleted,
-        attachment: ex.attachment === 'No attachment' ? null : ex.attachment,
-      }))
-    );
 
     try {
-      await client.post('/api/workouts', {
-        title: workout.title,
-        durationSeconds: elapsed,
-        sets,
-        splitId: splitId ?? null,
-      });
+      await finishWorkout();
       queryClient.invalidateQueries({ queryKey: ['workouts'] });
       queryClient.invalidateQueries({ queryKey: ['routines'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       router.back();
     } catch (err) {
-      setSaving(false);
       Alert.alert('Failed to save', err instanceof Error ? err.message : 'Could not save workout');
     }
   };
 
-  const pickingExercise = workout?.exercises.find((e) => e.id === pickingExerciseId);
+  const handleDiscard = () => {
+    Alert.alert(
+      'Discard workout?',
+      'All progress will be lost.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            discardWorkout();
+            router.back();
+          },
+        },
+      ]
+    );
+  };
 
-  const status = isLoading ? 'loading' : error || !workout || workout.exercises.length === 0 ? 'empty' : 'data';
+  const pickingExercise = exercises.find((e) => e.exerciseId === pickingExerciseId);
+
+  const status = isLoading ? 'loading' : error || exercises.length === 0 ? 'empty' : 'data';
 
   return (
     <SafeAreaView className="flex-1 bg-black">
@@ -314,7 +289,7 @@ export default function WorkoutScreen() {
         <View className="flex-row items-center justify-between px-4 py-4 bg-black">
           <View className="flex-row items-center flex-1">
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={handleDiscard}
               activeOpacity={0.7}
               className="mr-3 p-2 rounded-full bg-[#1C1C1E]"
             >
@@ -322,7 +297,7 @@ export default function WorkoutScreen() {
             </TouchableOpacity>
             <View className="flex-1">
               <Text className="text-white text-lg font-extrabold tracking-tight" numberOfLines={1}>
-                {workout?.title ?? 'Workout'}
+                {title || 'Workout'}
               </Text>
               <View className="flex-row items-center mt-1">
                 <Text className="text-[#E63946] text-xl font-bold mr-3">{formatTime(elapsed)}</Text>
@@ -338,11 +313,11 @@ export default function WorkoutScreen() {
           </View>
           <TouchableOpacity
             activeOpacity={0.85}
-            disabled={saving}
-            className={`rounded-xl px-5 py-2.5 ${saving ? 'bg-[#E63946]/50' : 'bg-[#E63946]'}`}
+            disabled={isSaving}
+            className={`rounded-xl px-5 py-2.5 ${isSaving ? 'bg-[#E63946]/50' : 'bg-[#E63946]'}`}
             onPress={handleFinish}
           >
-            <Text className="text-white font-bold text-sm">{saving ? 'Saving...' : 'Finish'}</Text>
+            <Text className="text-white font-bold text-sm">{isSaving ? 'Saving...' : 'Finish'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -361,11 +336,11 @@ export default function WorkoutScreen() {
             emptySubtitle="Add an exercise to start your workout."
             error={error}
           >
-            {workout && workout.exercises.length > 0 && (
+            {exercises.length > 0 && (
               <>
-                {workout.exercises.map((exercise, exIndex) => (
+                {exercises.map((exercise, exIndex) => (
                   <View
-                    key={exercise.id}
+                    key={exercise.exerciseId}
                     className="bg-[#121212] rounded-[20px] p-4 mb-3"
                     style={exIndex === 0 ? { marginTop: 4 } : undefined}
                   >
@@ -373,15 +348,15 @@ export default function WorkoutScreen() {
                     <Text className="text-white text-lg font-bold mb-1">{exercise.name}</Text>
 
                     {/* Attachment Picker */}
-                    {getAttachmentsForEquipment(exercise.equipment).length > 1 && (
+                    {getAttachmentsForEquipment(exercise.equipment || []).length > 1 && (
                       <TouchableOpacity
                         activeOpacity={0.7}
-                        onPress={() => setPickingExerciseId(exercise.id)}
+                        onPress={() => setPickingExerciseId(exercise.exerciseId)}
                         className="flex-row items-center mb-4"
                       >
                         <Ionicons name="options-outline" size={14} color="#E63946" />
                         <Text className="text-[#E63946] text-sm font-semibold ml-1.5">
-                          {exercise.attachment === 'No attachment' ? 'Add attachment' : exercise.attachment}
+                          {exercise.attachment === 'No attachment' ? 'Add attachment' : exercise.attachment || 'Add attachment'}
                         </Text>
                         <Ionicons name="chevron-down" size={14} color="#E63946" className="ml-1" />
                       </TouchableOpacity>
@@ -399,61 +374,70 @@ export default function WorkoutScreen() {
                     </View>
 
                     {/* Set Rows */}
-                    {exercise.sets.map((set) => (
-                      <View
-                        key={set.id}
-                        className={`flex-row items-center mb-2 ${set.isCompleted ? 'opacity-40' : ''}`}
-                      >
-                        {/* Set Number */}
-                        <View className="w-10 h-10 rounded-lg bg-[#1C1C1E] items-center justify-center">
-                          <Text className="text-white text-sm font-bold">{set.number}</Text>
-                        </View>
+                    {exercise.sets.map((set) => {
+                      const hintKey = `${exercise.exerciseId}-${set.setIndex}`;
+                      const previousDisplay =
+                        previousHints[hintKey] ||
+                        (set.previousWeight !== undefined
+                          ? `${set.previousWeight}kg × ${set.previousReps}`
+                          : '');
 
-                        {/* Previous */}
-                        <Text className="text-[#A0A0A0] text-sm font-medium flex-1 px-2">
-                          {set.previous}
-                        </Text>
-
-                        {/* Weight Input */}
-                        <TextInput
-                          value={set.weight}
-                          onChangeText={(val) => updateSet(exercise.id, set.id, 'weight', val)}
-                          keyboardType="numeric"
-                          placeholder="—"
-                          placeholderTextColor="#555"
-                          className="w-16 h-10 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold mr-2 px-2"
-                        />
-
-                        {/* Reps Input */}
-                        <TextInput
-                          value={set.reps}
-                          onChangeText={(val) => updateSet(exercise.id, set.id, 'reps', val)}
-                          keyboardType="numeric"
-                          placeholder="—"
-                          placeholderTextColor="#555"
-                          className="w-16 h-10 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold mr-2 px-2"
-                        />
-
-                        {/* Checkmark Toggle */}
-                        <TouchableOpacity
-                          onPress={() => toggleSetCompleted(exercise.id, set.id)}
-                          activeOpacity={0.7}
-                          className={`w-10 h-10 rounded-lg items-center justify-center ${
-                            set.isCompleted ? 'bg-[#4ADE80]' : 'bg-[#1C1C1E]'
-                          }`}
+                      return (
+                        <View
+                          key={set.id}
+                          className={`flex-row items-center mb-2 ${set.isCompleted ? 'opacity-40' : ''}`}
                         >
-                          <Ionicons
-                            name="checkmark"
-                            size={18}
-                            color={set.isCompleted ? '#000000' : '#555'}
+                          {/* Set Number */}
+                          <View className="w-10 h-10 rounded-lg bg-[#1C1C1E] items-center justify-center">
+                            <Text className="text-white text-sm font-bold">{set.setIndex}</Text>
+                          </View>
+
+                          {/* Previous */}
+                          <Text className="text-[#A0A0A0] text-sm font-medium flex-1 px-2">
+                            {previousDisplay}
+                          </Text>
+
+                          {/* Weight Input */}
+                          <TextInput
+                            value={set.weight !== null ? String(set.weight) : ''}
+                            onChangeText={(val) => updateSetInStore(exercise.exerciseId, set.id, 'weight', val)}
+                            keyboardType="numeric"
+                            placeholder="—"
+                            placeholderTextColor="#555"
+                            className="w-16 h-10 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold mr-2 px-2"
                           />
-                        </TouchableOpacity>
-                      </View>
-                    ))}
+
+                          {/* Reps Input */}
+                          <TextInput
+                            value={set.reps !== null ? String(set.reps) : ''}
+                            onChangeText={(val) => updateSetInStore(exercise.exerciseId, set.id, 'reps', val)}
+                            keyboardType="numeric"
+                            placeholder="—"
+                            placeholderTextColor="#555"
+                            className="w-16 h-10 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold mr-2 px-2"
+                          />
+
+                          {/* Checkmark Toggle */}
+                          <TouchableOpacity
+                            onPress={() => toggleSetCompleteInStore(exercise.exerciseId, set.id)}
+                            activeOpacity={0.7}
+                            className={`w-10 h-10 rounded-lg items-center justify-center ${
+                              set.isCompleted ? 'bg-[#4ADE80]' : 'bg-[#1C1C1E]'
+                            }`}
+                          >
+                            <Ionicons
+                              name="checkmark"
+                              size={18}
+                              color={set.isCompleted ? '#000000' : '#555'}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      );
+                    })}
 
                     {/* Add Set Button */}
                     <TouchableOpacity
-                      onPress={() => addSet(exercise.id)}
+                      onPress={() => addSetToStore(exercise.exerciseId)}
                       activeOpacity={0.7}
                       className="flex-row items-center justify-center mt-2 py-3 rounded-xl bg-[#1C1C1E]"
                     >
@@ -483,14 +467,14 @@ export default function WorkoutScreen() {
           equipment={pickingExercise?.equipment ?? []}
           selectedId={
             pickingExercise
-              ? getAttachmentsForEquipment(pickingExercise.equipment).find(
+              ? getAttachmentsForEquipment(pickingExercise.equipment || []).find(
                   (a) => a.name === pickingExercise.attachment
                 )?.id ?? null
               : null
           }
           onClose={() => setPickingExerciseId(null)}
           onSelect={(attachment) =>
-            pickingExerciseId && updateAttachment(pickingExerciseId, attachment.name)
+            pickingExerciseId && setAttachmentInStore(pickingExerciseId, attachment.name)
           }
         />
       </KeyboardAvoidingView>

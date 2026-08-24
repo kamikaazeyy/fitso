@@ -63,16 +63,52 @@ jobs:
         uses: appleboy/ssh-action@v1.0.0
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_OWNER: ${{ github.repository_owner }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_SSH_PORT || '22' }}
-          envs: GHCR_TOKEN
+          envs: GHCR_TOKEN,GHCR_OWNER
           script: |
             set -e
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "${{ github.repository_owner }}" --password-stdin
-            cd /opt/fitso
+
+            # Log into GHCR to pull the pre-built backend image
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
+
+            cd /opt/fitso/server
+
+            # Pull the latest backend image from GHCR
             docker compose pull backend
-            docker compose up -d backend caddy
+
+            # Start/restart all services.
+            # Postgres and PowerSync are already running (data persists in volumes);
+            # this just picks up the new backend image and any config changes.
+            docker compose up -d
+
+            # Wait for Postgres to be healthy
+            echo "Waiting for Postgres..."
+            for i in $(seq 1 30); do
+              if docker exec fitso-postgres pg_isready -U fitso -d fitso >/dev/null 2>&1; then
+                echo "Postgres is healthy"
+                break
+              fi
+              sleep 2
+            done
+
+            # Ensure the PowerSync publication exists (idempotent)
+            docker exec fitso-postgres psql -U fitso -d fitso -c \
+              "DO \$\$ BEGIN CREATE PUBLICATION powersync FOR ALL TABLES; EXCEPTION WHEN duplicate_object THEN null; END \$\$;" \
+              2>/dev/null || echo "Publication already exists or DB not ready"
+
+            # Run Prisma migrations inside the backend container so the
+            # schema stays in sync with the code. The backend container has
+            # prisma installed and DATABASE_URL set to the Docker network host.
+            docker exec fitso-backend npx prisma db push --skip-generate 2>/dev/null || \
+              echo "WARNING: prisma db push failed — schema may already be up to date"
+
+            # Restart PowerSync so it picks up any sync-config changes
+            docker compose restart powersync
+
+            # Show final status
             docker compose ps

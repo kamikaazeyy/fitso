@@ -1,0 +1,17 @@
+{$CADDY_HOST} {
+	# PowerSync sync server at /powersync/
+	handle_path /powersync/* {
+		reverse_proxy powersync:8080
+	}
+
+	# PowerSync WebSocket and health endpoints (no trailing path)
+	handle /powersync {
+		rewrite * /
+		reverse_proxy powersync:8080
+	}
+
+	# Fastify REST API at /
+	handle {
+		reverse_proxy backend:3000
+	}
+}

@@ -37,7 +37,7 @@ export function flushPromises(): Promise<void> {
 
 export function resetSession(store: SessionStore): void {
   store.getState().discardWorkout();
-  store.setState({ personalRecords: {} });
+  store.setState({ personalRecords: {}, userId: null, splitId: null });
 }
 
 /** Logs `weight x reps` into a set and marks it complete. */

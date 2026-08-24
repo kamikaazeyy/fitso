@@ -29,16 +29,22 @@ export interface WorkoutSessionState {
   isActive: boolean;
   workoutId: string | null;
   routineId: string | null;
+  splitId: string | null;
   title: string;
   startTime: number | null;
   exercises: ActiveExercise[];
   activeRestTimer: ActiveRestTimer | null;
   /** Best Brzycki 1RM per exercise, used to flag PRs without hitting the network. */
   personalRecords: Record<string, number>;
+  /** Authenticated user's id — written into the `user_id` column on save so
+   * the sync rules can scope the workout to this user. Set by AuthContext. */
+  userId: string | null;
   isSaving: boolean;
 }
 
 export interface WorkoutSessionActions {
+  setUserId: (userId: string | null) => void;
+  setSplitId: (splitId: string | null) => void;
   startWorkout: (routine?: Routine) => void;
   addExercise: (exercise: Exercise) => void;
   removeExercise: (exerciseId: string) => void;
@@ -64,11 +70,13 @@ const initialState: WorkoutSessionState = {
   isActive: false,
   workoutId: null,
   routineId: null,
+  splitId: null,
   title: '',
   startTime: null,
   exercises: [],
   activeRestTimer: null,
   personalRecords: {},
+  userId: null,
   isSaving: false,
 };
 
@@ -125,6 +133,10 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
     (set, get) => ({
       ...initialState,
 
+      setUserId: (userId) => set({ userId }),
+
+      setSplitId: (splitId) => set({ splitId }),
+
       startWorkout: (routine) => {
         const exercises: ActiveExercise[] = (routine?.exercises ?? [])
           .slice()
@@ -151,6 +163,8 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         set({
           ...initialState,
           personalRecords: get().personalRecords,
+          userId: get().userId,
+          splitId: get().splitId,
           isActive: true,
           workoutId: uuid(),
           routineId: routine?.id ?? null,
@@ -315,8 +329,11 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
       },
 
       finishWorkout: async () => {
-        const { isActive, workoutId, routineId, title, startTime, exercises } = get();
+        const { isActive, workoutId, routineId, splitId, title, startTime, exercises, userId } = get();
         if (!isActive || !workoutId) return;
+        if (!userId) {
+          throw new Error('Cannot finish workout: user is not authenticated');
+        }
 
         const finishedAt = Date.now();
         const createdAt = new Date(finishedAt).toISOString();
@@ -330,11 +347,13 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
           await db.writeTransaction(async (tx) => {
             await tx.execute(
               `INSERT INTO ${WORKOUTS_TABLE}
-                 (id, routine_id, title, started_at, finished_at, duration_seconds, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                 (id, user_id, routine_id, split_id, title, started_at, finished_at, duration_seconds, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 workoutId,
+                userId,
                 routineId,
+                splitId,
                 title,
                 startedAt,
                 new Date(finishedAt).toISOString(),
@@ -347,18 +366,21 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
               for (const entry of exercise.sets) {
                 await tx.execute(
                   `INSERT INTO ${WORKOUT_SETS_TABLE}
-                     (id, workout_id, exercise_id, order_index, set_type, weight, reps, rpe, is_completed, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                     (id, workout_id, exercise_name, wger_id, order_index, set_number, set_type, weight, reps, rpe, is_completed, attachment, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     entry.id,
                     workoutId,
-                    exercise.exerciseId,
+                    exercise.name,
+                    exercise.wgerId ?? null,
+                    entry.setIndex,
                     entry.setIndex,
                     entry.setType,
                     entry.weight,
                     entry.reps,
                     entry.rpe,
                     entry.isCompleted ? 1 : 0,
+                    exercise.attachment ?? null,
                     createdAt,
                   ]
                 );
@@ -372,12 +394,12 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
 
         await cancelRestNotification().catch(() => undefined);
         heavyFeedback();
-        set({ ...initialState, personalRecords: get().personalRecords });
+        set({ ...initialState, personalRecords: get().personalRecords, userId: get().userId, splitId: get().splitId });
       },
 
       discardWorkout: () => {
         void cancelRestNotification().catch(() => undefined);
-        set({ ...initialState, personalRecords: get().personalRecords });
+        set({ ...initialState, personalRecords: get().personalRecords, userId: get().userId, splitId: get().splitId });
       },
     }),
     {
@@ -387,11 +409,13 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         isActive: state.isActive,
         workoutId: state.workoutId,
         routineId: state.routineId,
+        splitId: state.splitId,
         title: state.title,
         startTime: state.startTime,
         exercises: state.exercises,
         activeRestTimer: state.activeRestTimer,
         personalRecords: state.personalRecords,
+        userId: state.userId,
       }),
     }
   )

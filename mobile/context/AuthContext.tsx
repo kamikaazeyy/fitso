@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { client, setAuthToken } from '@/src/api/client';
+import { connectPowerSync, disconnectPowerSync } from '@/src/db/PowerSyncProvider';
+import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 
 export interface User {
   id: string;
@@ -38,7 +40,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthToken(storedToken);
         }
         if (storedUser) {
-          setUser(JSON.parse(storedUser));
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          useWorkoutSessionStore.getState().setUserId(parsedUser.id);
         }
       } finally {
         setIsLoading(false);
@@ -53,25 +57,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(newToken);
     setUser(newUser);
     setAuthToken(newToken);
+    useWorkoutSessionStore.getState().setUserId(newUser.id);
+    // Connect PowerSync sync engine with the new token
+    connectPowerSync(newToken).catch((err) => {
+      console.warn('[Auth] Failed to connect PowerSync after login', err);
+    });
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { data } = await client.post<{ token: string; user: User }>('/api/auth/login', {
-      email,
-      password,
-    });
-    await persist(data.token, data.user);
-    return data.user;
+    try {
+      const { data } = await client.post<{ token: string; user: User }>('/api/auth/login', {
+        email,
+        password,
+      });
+      await persist(data.token, data.user);
+      return data.user;
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || 'Login failed';
+      throw new Error(message);
+    }
   }, [persist]);
 
   const signup = useCallback(async (email: string, password: string, name?: string) => {
-    const { data } = await client.post<{ token: string; user: User }>('/api/auth/signup', {
-      email,
-      password,
-      name,
-    });
-    await persist(data.token, data.user);
-    return data.user;
+    try {
+      const { data } = await client.post<{ token: string; user: User }>('/api/auth/signup', {
+        email,
+        password,
+        name,
+      });
+      await persist(data.token, data.user);
+      return data.user;
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || 'Signup failed';
+      throw new Error(message);
+    }
   }, [persist]);
 
   const logout = useCallback(async () => {
@@ -80,6 +99,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
     setAuthToken(null);
+    useWorkoutSessionStore.getState().setUserId(null);
+    await disconnectPowerSync().catch(() => undefined);
   }, []);
 
   const value = useMemo(

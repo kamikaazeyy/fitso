@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: fitso-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-fitso}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fitso-secret}
+      POSTGRES_DB: ${POSTGRES_DB:-fitso}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    command: ["postgres", "-c", "wal_level=logical", "-c", "max_replication_slots=10", "-c", "max_wal_senders=10"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fitso} -d ${POSTGRES_DB:-fitso}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - fitso-net
+
+  backend:
+    # Use the pre-built GHCR image on the server; fall back to local build
+    # for development. Set BACKEND_IMAGE to override (CI/CD sets this).
+    image: ${BACKEND_IMAGE:-ghcr.io/kamikaazeyy/fitso-backend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fitso-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-fitso}:${POSTGRES_PASSWORD:-fitso-secret}@postgres:5432/${POSTGRES_DB:-fitso}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    networks:
+      - fitso-net
+
+  powersync:
+    image: journeyapps/powersync-service:latest
+    container_name: fitso-powersync
+    restart: unless-stopped
+    command: ["start", "-r", "unified"]
+    volumes:
+      - ./powersync/service.yaml:/config/service.yaml
+      - ./powersync/sync-config.yaml:/config/sync-config.yaml
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    networks:
+      - fitso-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: fitso-caddy
+    restart: unless-stopped
+    environment:
+      CADDY_HOST: ${CADDY_HOST:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+    depends_on:
+      - backend
+      - powersync
+    networks:
+      - fitso-net
+
+networks:
+  fitso-net:
+    name: fitso-net
+    driver: bridge
