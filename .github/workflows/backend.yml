@@ -76,7 +76,7 @@ jobs:
             # Log into GHCR to pull the pre-built backend image
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
 
-            cd /opt/fitso/server
+            cd /home/kamikaazeyy/fitso/server
 
             # Pull the latest backend image from GHCR
             docker compose pull backend

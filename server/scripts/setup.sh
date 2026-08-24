@@ -37,14 +37,20 @@ echo ""
 echo "[2/5] Updating PowerSync service.yaml with public key modulus..."
 MODULUS=$(openssl rsa -in "$SERVER_DIR/keys/jwt-public.pem" -pubin -noout -modulus \
   | sed 's/Modulus=//' | tr -d ' \n' \
-  | xxd -r -p | base64 | tr '+/' '-_' | tr -d '=')
+  | xxd -r -p | base64 -w 0 | tr '+/' '-_' | tr -d '=' | tr -d '\n')
 
-if [ "$(uname)" = "Darwin" ]; then
-  sed -i '' "s|n: \".*\"|n: \"$MODULUS\"|" "$SERVER_DIR/powersync/service.yaml"
-else
-  sed -i "s|n: \".*\"|n: \"$MODULUS\"|" "$SERVER_DIR/powersync/service.yaml"
-fi
-echo "  service.yaml updated."
+# Use Python for reliable string replacement (sed struggles with special chars)
+python3 -c "
+import sys
+modulus = sys.argv[1]
+with open(sys.argv[2], 'r') as f:
+    content = f.read()
+import re
+content = re.sub(r'n: \".*?\"', 'n: \"' + modulus + '\"', content)
+with open(sys.argv[2], 'w') as f:
+    f.write(content)
+print('  service.yaml updated.')
+" "$MODULUS" "$SERVER_DIR/powersync/service.yaml" || echo "  WARNING: Could not update service.yaml — check manually."
 
 # --- 3. Create .env if it doesn't exist ---
 echo ""
