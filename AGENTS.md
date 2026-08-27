@@ -137,8 +137,8 @@ Generated at `server/keys/jwt-private.pem` and `server/keys/jwt-public.pem`
 ### One-time server setup (before first CI/CD deploy)
 ```bash
 ssh user@<server-tailscale-ip>
-cd /opt/fitso
-git clone <repo-url> .
+cd /home/kamikaazeyy/fitso
+git pull origin main
 cd server
 bash scripts/setup.sh
 ```

@@ -69,14 +69,14 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_SSH_PORT || '22' }}
-          envs: GHCR_TOKEN,GHCR_OWNER
+          envs: GHCR_TOKEN,GHCR_OWNER,GITHUB_SHA
           script: |
             set -e
 
             # Log into GHCR to pull the pre-built backend image
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
 
-            cd /opt/fitso/server
+            cd /home/kamikaazeyy/fitso/server
 
             # Pull the latest backend image from GHCR
             docker compose pull backend
@@ -112,3 +112,12 @@ jobs:
 
             # Show final status
             docker compose ps
+
+            # Auto-trigger a preview APK mirror build on the monitoring dashboard
+            cd /home/kamikaazeyy/fitso
+            git pull origin main || true
+            PAYLOAD=$(printf '{"profile":"preview","message":"Auto mirror after main deploy: %s"}' "$GITHUB_SHA")
+            curl -fsS -X POST http://localhost:3000/api/builds \
+              -H 'Content-Type: application/json' \
+              -d "$PAYLOAD" \
+              || echo "WARNING: Failed to trigger APK mirror (is monitoring-dashboard running?)"
