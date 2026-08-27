@@ -59,6 +59,26 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
           tags: tag:ci
 
+      - name: Write deploy key
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          # The secret may be a raw PEM key or base64-encoded.
+          # Try base64 decode first; if it fails, write the value as-is.
+          if printf '%s' "$SSH_KEY" | base64 -d 2>/dev/null > ~/.ssh/deploy_key.tmp; then
+            mv ~/.ssh/deploy_key.tmp ~/.ssh/deploy_key
+            echo "Wrote base64-decoded key"
+          else
+            rm -f ~/.ssh/deploy_key.tmp
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+            echo "Wrote raw key"
+          fi
+          chmod 600 ~/.ssh/deploy_key
+          echo "Key file: $(wc -l < ~/.ssh/deploy_key) lines, $(wc -c < ~/.ssh/deploy_key) bytes"
+          head -1 ~/.ssh/deploy_key
+          ls -l ~/.ssh/deploy_key
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.0
         env:
