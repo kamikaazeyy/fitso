@@ -60,9 +60,15 @@ jobs:
           tags: tag:ci
 
       - name: Write deploy key
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo -n "${{ secrets.SERVER_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          if printf '%s' "$SSH_KEY" | grep -q 'BEGIN .*PRIVATE KEY'; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          else
+            printf '%s' "$SSH_KEY" | base64 -d > ~/.ssh/deploy_key
+          fi
           chmod 600 ~/.ssh/deploy_key
           ls -l ~/.ssh/deploy_key
 
