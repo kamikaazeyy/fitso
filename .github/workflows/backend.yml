@@ -59,15 +59,22 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
           tags: tag:ci
 
+      - name: Write deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo -n "${{ secrets.SERVER_SSH_KEY }}" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ls -l ~/.ssh/deploy_key
+
       - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_OWNER: ${{ github.repository_owner }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
+          key_path: /home/runner/.ssh/deploy_key
           port: ${{ secrets.SERVER_SSH_PORT || '22' }}
           envs: GHCR_TOKEN,GHCR_OWNER,GITHUB_SHA
           script: |
