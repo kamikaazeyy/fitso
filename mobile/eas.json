@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 15.0.0"
+    "version": ">= 15.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
@@ -12,6 +13,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "buildType": "apk",
       "env": {
         "EXPO_PUBLIC_API_URL": "YOUR_PREVIEW_API_URL"
       }

@@ -135,7 +135,8 @@ jobs:
 
             # Auto-trigger a preview APK mirror build on the monitoring dashboard
             cd /home/kamikaazeyy/fitso
-            git pull origin main || true
+            git fetch origin main
+            git reset --hard origin/main
             PAYLOAD=$(printf '{"profile":"preview","message":"Auto mirror after main deploy: %s"}' "$GITHUB_SHA")
             curl -fsS -X POST http://localhost:3000/api/builds \
               -H 'Content-Type: application/json' \
