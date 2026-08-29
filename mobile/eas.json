@@ -13,7 +13,9 @@
     },
     "preview": {
       "distribution": "internal",
-      "buildType": "apk",
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "YOUR_PREVIEW_API_URL"
       }
