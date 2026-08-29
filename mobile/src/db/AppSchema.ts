@@ -1,4 +1,4 @@
-import { column, Schema, Table } from '@powersync/common';
+import { column, Schema, Table } from '@powersync/react-native';
 
 export const ROUTINES_TABLE = 'routines';
 export const WORKOUTS_TABLE = 'workouts';
