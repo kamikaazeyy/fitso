@@ -8,7 +8,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://10.0.2.2:3000"
+        "EXPO_PUBLIC_API_URL": "http://10.0.2.2:3001",
+        "EXPO_PUBLIC_POWERSYNC_URL": "http://10.0.2.2:8080"
       }
     },
     "preview": {
@@ -17,12 +18,14 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "YOUR_PREVIEW_API_URL"
+        "EXPO_PUBLIC_API_URL": "http://100.70.218.115",
+        "EXPO_PUBLIC_POWERSYNC_URL": "http://100.70.218.115/powersync"
       }
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_API_URL": "YOUR_PRODUCTION_API_URL"
+        "EXPO_PUBLIC_API_URL": "http://100.70.218.115",
+        "EXPO_PUBLIC_POWERSYNC_URL": "http://100.70.218.115/powersync"
       }
     }
   }
