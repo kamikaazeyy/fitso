@@ -7,6 +7,7 @@ import { WorkoutProvider } from '@/context/WorkoutContext';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { LoginScreen } from '@/components/LoginScreen';
 import { RestTimerBar } from '@/components/RestTimerBar';
+import { UpdateChecker } from '@/components/UpdateChecker';
 import { PowerSyncProvider } from '@/src/db/PowerSyncProvider';
 import '../global.css';
 
@@ -41,6 +42,7 @@ export default function RootLayout() {
             <PowerSyncProvider>
               <WorkoutProvider>
                 <AppContent />
+                <UpdateChecker />
               </WorkoutProvider>
             </PowerSyncProvider>
           </AuthProvider>
