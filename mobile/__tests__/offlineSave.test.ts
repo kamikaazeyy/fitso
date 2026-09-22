@@ -107,7 +107,9 @@ describe('finishWorkout (offline)', () => {
 
     expect(exerciseName).toBe('Exercise 1');
     expect(wgerId).toBeNull();
-    expect(orderIndex).toBe(1);
+    // order_index is the exercise's position in the session (0-based), so sets
+    // group by exercise when read back ordered by order_index + set_number.
+    expect(orderIndex).toBe(0);
     expect(setNumber).toBe(1);
     expect(setType).toBe('NORMAL');
     expect(weight).toBe(80);
@@ -117,6 +119,26 @@ describe('finishWorkout (offline)', () => {
     expect(attachment).toBeNull();
     expect(typeof createdAt).toBe('string');
     expect(Number.isNaN(Date.parse(createdAt as string))).toBe(false);
+  });
+
+  it('groups sets by exercise order and does not persist untouched empty sets', async () => {
+    store.getState().startWorkout();
+    store.getState().addExercise({ id: 'ex-bench', name: 'Bench Press' });
+    store.getState().addExercise({ id: 'ex-squat', name: 'Back Squat' });
+    logSet(store, 'ex-bench', 0, 100, 8);
+    logSet(store, 'ex-squat', 0, 140, 5);
+    // Second set on bench is never touched — should be skipped on save.
+    store.getState().addSet('ex-bench');
+
+    await store.getState().finishWorkout();
+
+    const setInserts = insertsInto(db, WORKOUT_SETS_TABLE);
+    expect(setInserts).toHaveLength(2);
+    // order_index (param 4) = exercise order, set_number (param 5) = set index
+    expect(setInserts[0].params[4]).toBe(0);
+    expect(setInserts[0].params[5]).toBe(1);
+    expect(setInserts[1].params[4]).toBe(1);
+    expect(setInserts[1].params[5]).toBe(1);
   });
 
   it('records the workout duration from the in-memory start time', async () => {

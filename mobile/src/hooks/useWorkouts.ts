@@ -37,39 +37,45 @@ export function useWorkouts(limit = 50, offset = 0) {
         [limit, offset]
       );
       const workoutRows = workoutsResult.rows?._array || [];
+      if (workoutRows.length === 0) return [];
 
-      const result: WorkoutWithSets[] = [];
-      for (const workout of workoutRows) {
-        const setsResult = await db.execute(
-          `SELECT id, workout_id, exercise_name, wger_id, set_number, weight, reps, is_completed, attachment
-           FROM workout_sets
-           WHERE workout_id = ?
-           ORDER BY order_index ASC, set_number ASC`,
-          [workout.id]
-        );
-        const setRows = setsResult.rows?._array || [];
+      // One batched query for all sets instead of one query per workout —
+      // order_index (exercise order) then set_number groups them per exercise.
+      const placeholders = workoutRows.map(() => '?').join(', ');
+      const setsResult = await db.execute(
+        `SELECT id, workout_id, exercise_name, wger_id, set_number, weight, reps, is_completed, attachment
+         FROM workout_sets
+         WHERE workout_id IN (${placeholders})
+         ORDER BY order_index ASC, set_number ASC`,
+        workoutRows.map((w: any) => w.id)
+      );
 
-        result.push({
-          id: workout.id,
-          userId: workout.user_id,
-          title: workout.title,
-          durationSeconds: workout.duration_seconds ?? 0,
-          completedAt: workout.finished_at,
-          sets: setRows.map((s: any) => ({
-            id: s.id,
-            workoutId: s.workout_id,
-            exerciseName: s.exercise_name,
-            wgerId: s.wger_id ?? null,
-            setNumber: s.set_number,
-            weightKg: s.weight ?? 0,
-            reps: s.reps ?? 0,
-            completed: s.is_completed === 1,
-            attachment: s.attachment ?? null,
-          })),
-        });
+      const setsByWorkout = new Map<string, WorkoutSet[]>();
+      for (const s of setsResult.rows?._array || []) {
+        const set: WorkoutSet = {
+          id: s.id,
+          workoutId: s.workout_id,
+          exerciseName: s.exercise_name,
+          wgerId: s.wger_id ?? null,
+          setNumber: s.set_number,
+          weightKg: s.weight ?? 0,
+          reps: s.reps ?? 0,
+          completed: s.is_completed === 1,
+          attachment: s.attachment ?? null,
+        };
+        const list = setsByWorkout.get(s.workout_id);
+        if (list) list.push(set);
+        else setsByWorkout.set(s.workout_id, [set]);
       }
 
-      return result;
+      return workoutRows.map((workout: any) => ({
+        id: workout.id,
+        userId: workout.user_id,
+        title: workout.title,
+        durationSeconds: workout.duration_seconds ?? 0,
+        completedAt: workout.finished_at,
+        sets: setsByWorkout.get(workout.id) ?? [],
+      }));
     },
   });
 }

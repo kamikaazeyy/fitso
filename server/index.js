@@ -31,6 +31,14 @@ if (!JWT_PRIVATE_KEY) {
 const JWT_ALGORITHM = JWT_PRIVATE_KEY.includes('BEGIN') ? 'RS256' : 'HS256';
 const JWT_AUDIENCE = 'powersync';
 
+// RS256 tokens are verified with the PUBLIC key — the private key is only for
+// signing. Falls back to the same value in HS256 dev mode.
+const PUBLIC_KEY_PATH = path.join(__dirname, 'keys', 'jwt-public.pem');
+const JWT_VERIFY_KEY =
+  JWT_ALGORITHM === 'RS256' && fs.existsSync(PUBLIC_KEY_PATH)
+    ? fs.readFileSync(PUBLIC_KEY_PATH, 'utf8')
+    : JWT_PRIVATE_KEY;
+
 app.register(cors, { origin: process.env.CORS_ORIGIN || '*' });
 
 // Health checks
@@ -43,7 +51,7 @@ async function authenticate(request, reply) {
 
   if (token) {
     try {
-      const decoded = jwt.verify(token, JWT_PRIVATE_KEY, {
+      const decoded = jwt.verify(token, JWT_VERIFY_KEY, {
         algorithms: [JWT_ALGORITHM],
         audience: JWT_AUDIENCE,
       });
@@ -67,6 +75,14 @@ const authAttempts = new Map();
 async function rateLimitAuth(request, reply) {
   const key = `${request.ip}:${request.routeOptions.url}`;
   const now = Date.now();
+
+  // Opportunistically purge expired windows so the map doesn't grow forever.
+  if (authAttempts.size > 1000) {
+    for (const [k, v] of authAttempts) {
+      if (now > v.resetAt) authAttempts.delete(k);
+    }
+  }
+
   let entry = authAttempts.get(key);
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + AUTH_RATE_WINDOW_MS };
@@ -288,17 +304,18 @@ app.get('/api/dashboard/today', { preHandler: authenticate }, async (request, re
   const queryDateUTC = new Date(dateString);
 
   try {
-    const nutrition = await prisma.nutritionLog.findUnique({
-      where: {
-        userId_logDate: { userId: request.userId, logDate: queryDateUTC },
-      },
-    });
-
-    const recentWorkouts = await prisma.workout.findMany({
-      where: { userId: request.userId },
-      orderBy: { finishedAt: 'desc' },
-      take: 3,
-    });
+    const [nutrition, recentWorkouts] = await Promise.all([
+      prisma.nutritionLog.findUnique({
+        where: {
+          userId_logDate: { userId: request.userId, logDate: queryDateUTC },
+        },
+      }),
+      prisma.workout.findMany({
+        where: { userId: request.userId },
+        orderBy: { finishedAt: 'desc' },
+        take: 3,
+      }),
+    ]);
 
     return reply.send({
       nutrition: nutrition || { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
@@ -503,58 +520,64 @@ class SyncOpError extends Error {
   }
 }
 
+// Runs `fn` once per `key` within a batch — a workout upload carries one op
+// per set, so without this the same parent row is re-SELECTed for every set.
+async function cachedLookup(cache, key, fn) {
+  if (!cache.has(key)) cache.set(key, await fn());
+  return cache.get(key);
+}
+
 // Resolves which user owns row `id` in `table`, walking up the parent chain
 // for child tables (workout_sets → workout, splits → routine,
 // routine_exercises → split → routine). For PUT creates the row doesn't
 // exist yet, so the parent id is taken from opData instead. Returns null
 // when no owner can be determined — e.g. a create whose parent isn't in
 // Postgres yet; the FK constraint will reject the write anyway.
-async function resolveOwnerId(table, id, opData, tx) {
+async function resolveOwnerId(table, id, opData, tx, cache) {
   const userIdOf = (row) => row?.userId ?? null;
+  const workoutOwner = (workoutId) =>
+    cachedLookup(cache, `workout:${workoutId}`, async () =>
+      userIdOf(await tx.workout.findUnique({ where: { id: workoutId }, select: { userId: true } }))
+    );
+  const routineOwner = (routineId) =>
+    cachedLookup(cache, `routine:${routineId}`, async () =>
+      userIdOf(await tx.routine.findUnique({ where: { id: routineId }, select: { userId: true } }))
+    );
 
   switch (table) {
     case 'workouts':
-      return userIdOf(
-        await tx.workout.findUnique({ where: { id }, select: { userId: true } })
-      );
+      return workoutOwner(id);
     case 'routines':
-      return userIdOf(
-        await tx.routine.findUnique({ where: { id }, select: { userId: true } })
-      );
+      return routineOwner(id);
     case 'workout_sets': {
-      const row = await tx.workoutSet.findUnique({
-        where: { id },
-        select: { workoutId: true },
-      });
+      const row = await cachedLookup(cache, `workout_set:${id}`, () =>
+        tx.workoutSet.findUnique({ where: { id }, select: { workoutId: true } })
+      );
       const workoutId = row?.workoutId ?? opData.workoutId;
       if (!workoutId) return null;
-      return userIdOf(
-        await tx.workout.findUnique({ where: { id: workoutId }, select: { userId: true } })
-      );
+      return workoutOwner(workoutId);
     }
     case 'splits': {
-      const row = await tx.split.findUnique({
-        where: { id },
-        select: { routineId: true },
-      });
+      const row = await cachedLookup(cache, `split:${id}`, () =>
+        tx.split.findUnique({ where: { id }, select: { routineId: true } })
+      );
       const routineId = row?.routineId ?? opData.routineId;
       if (!routineId) return null;
-      return userIdOf(
-        await tx.routine.findUnique({ where: { id: routineId }, select: { userId: true } })
-      );
+      return routineOwner(routineId);
     }
     case 'routine_exercises': {
-      const row = await tx.routineExercise.findUnique({
-        where: { id },
-        select: { splitId: true },
-      });
+      const row = await cachedLookup(cache, `routine_exercise:${id}`, () =>
+        tx.routineExercise.findUnique({ where: { id }, select: { splitId: true } })
+      );
       const splitId = row?.splitId ?? opData.splitId;
       if (!splitId) return null;
-      const split = await tx.split.findUnique({
-        where: { id: splitId },
-        select: { routine: { select: { userId: true } } },
+      return cachedLookup(cache, `split_owner:${splitId}`, async () => {
+        const split = await tx.split.findUnique({
+          where: { id: splitId },
+          select: { routine: { select: { userId: true } } },
+        });
+        return split?.routine?.userId ?? null;
       });
-      return split?.routine?.userId ?? null;
     }
     default:
       return null;
@@ -611,6 +634,7 @@ app.post('/api/sync/upload', { preHandler: authenticate }, async (request, reply
     // partial state if a mid-batch op fails.
     const applied = await prisma.$transaction(async (tx) => {
       let count = 0;
+      const ownerCache = new Map();
 
       for (const op of operations) {
         const { table, op: opType, id, data } = op;
@@ -632,7 +656,7 @@ app.post('/api/sync/upload', { preHandler: authenticate }, async (request, reply
         // Security: verify ownership of the target row (or its parent for
         // child tables). Without this, a client could UPDATE/DELETE another
         // user's rows, or INSERT a child row under another user's parent.
-        const ownerId = await resolveOwnerId(table, id, opData, tx);
+        const ownerId = await resolveOwnerId(table, id, opData, tx, ownerCache);
         if (ownerId && ownerId !== request.userId) {
           throw new SyncOpError(id, table, 'Row belongs to another user', 403);
         }

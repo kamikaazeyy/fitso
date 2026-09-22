@@ -1,23 +1,44 @@
-import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { colors } from '@/constants/theme';
 import { useRoutines } from '@/src/hooks/useRoutines';
+import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 import { LoadableContainer } from '@/components/LoadableContainer';
 
 export default function TrainingScreen() {
   const router = useRouter();
   const { data: routines, isLoading, error } = useRoutines();
+  const isWorkoutActive = useWorkoutSessionStore((s) => s.isActive);
+  const activeTitle = useWorkoutSessionStore((s) => s.title);
+  const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
 
   const status = isLoading ? 'loading' : error || !routines || routines.length === 0 ? 'empty' : 'data';
 
   const startWorkout = (routineId?: string, splitId?: string) => {
-    if (routineId && splitId) {
-      router.push(`/workout?routineId=${routineId}&splitId=${splitId}`);
-    } else {
-      router.push('/workout');
+    const target =
+      routineId && splitId ? `/workout?routineId=${routineId}&splitId=${splitId}` : '/workout';
+
+    if (!isWorkoutActive) {
+      router.push(target);
+      return;
     }
+
+    // A session is already running — don't silently resume it when the user
+    // tapped "Start" on a different routine.
+    Alert.alert('Workout in progress', `"${activeTitle || 'Workout'}" is still running.`, [
+      { text: 'Resume', onPress: () => router.push('/workout') },
+      {
+        text: 'Discard & Start New',
+        style: 'destructive',
+        onPress: () => {
+          discardWorkout();
+          router.push(target);
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   return (
@@ -31,6 +52,27 @@ export default function TrainingScreen() {
           <Text className="text-white text-3xl font-extrabold tracking-tight">Training</Text>
           <Text className="text-[#A0A0A0] text-sm mt-1">Pick a routine and start lifting.</Text>
         </View>
+
+        {isWorkoutActive && (
+          <TouchableOpacity
+            className="bg-[#121212] border border-[#E63946] rounded-[20px] p-4 mb-5 flex-row items-center justify-between"
+            activeOpacity={0.8}
+            onPress={() => router.push('/workout')}
+          >
+            <View className="flex-row items-center flex-1">
+              <View className="w-2.5 h-2.5 rounded-full bg-[#4ADE80] mr-3" />
+              <View className="flex-1">
+                <Text className="text-[#4ADE80] text-xs font-semibold uppercase">
+                  Workout in progress
+                </Text>
+                <Text className="text-white font-bold" numberOfLines={1}>
+                  {activeTitle || 'Workout'}
+                </Text>
+              </View>
+            </View>
+            <Text className="text-[#E63946] font-bold text-sm ml-3">Resume</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           className="bg-[#E63946] rounded-[24px] p-5 flex-row items-center justify-between mb-5"

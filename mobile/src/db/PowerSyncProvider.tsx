@@ -1,12 +1,28 @@
 import React, { useEffect, useMemo } from 'react';
 import { PowerSyncContext } from '@powersync/react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
 import { getBackendConnector, setBackendConnectorToken } from './BackendConnector';
+import {
+  ROUTINE_EXERCISES_TABLE,
+  ROUTINES_TABLE,
+  SPLITS_TABLE,
+  WORKOUT_SETS_TABLE,
+  WORKOUTS_TABLE,
+} from './AppSchema';
 import * as SecureStore from 'expo-secure-store';
 
 export { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
 
 const TOKEN_KEY = 'authToken';
+
+const SYNCED_TABLES = [
+  ROUTINES_TABLE,
+  WORKOUTS_TABLE,
+  SPLITS_TABLE,
+  ROUTINE_EXERCISES_TABLE,
+  WORKOUT_SETS_TABLE,
+];
 
 /**
  * Makes the local-first database available to the tree via `usePowerSync()`.
@@ -16,8 +32,12 @@ const TOKEN_KEY = 'authToken';
  */
 export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
   const db = useMemo(() => getPowerSyncDatabase(), []);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
+    let disposeChangeListener: (() => void) | undefined;
+    let cancelled = false;
+
     // Connect to the sync server using the stored JWT
     const connect = async () => {
       try {
@@ -32,10 +52,31 @@ export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
-    db.init().then(connect).catch((error) => {
-      console.warn('[PowerSync] failed to initialise local database', error);
-    });
-  }, [db]);
+    db.init()
+      .then(() => {
+        if (cancelled) return;
+        // Keep React Query caches in sync with local SQLite. Reads go through
+        // useQuery, which never re-runs on its own — without this, screens show
+        // stale data after local writes and after sync downloads land.
+        disposeChangeListener = db.onChange(
+          {
+            onChange: () => {
+              void queryClient.invalidateQueries();
+            },
+          },
+          { tables: SYNCED_TABLES, throttleMs: 500 }
+        );
+        return connect();
+      })
+      .catch((error) => {
+        console.warn('[PowerSync] failed to initialise local database', error);
+      });
+
+    return () => {
+      cancelled = true;
+      disposeChangeListener?.();
+    };
+  }, [db, queryClient]);
 
   return <PowerSyncContext.Provider value={db}>{children}</PowerSyncContext.Provider>;
 }

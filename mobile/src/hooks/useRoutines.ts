@@ -44,49 +44,67 @@ export function useRoutines() {
         `SELECT id, name, created_at, updated_at FROM routines ORDER BY updated_at DESC`
       );
       const routineRows = routinesResult.rows?._array || [];
+      if (routineRows.length === 0) return [];
 
-      const result: Routine[] = [];
-      for (const routine of routineRows) {
-        const splitsResult = await db.execute(
-          `SELECT id, name, order_index FROM splits WHERE routine_id = ? ORDER BY order_index ASC`,
-          [routine.id]
-        );
-        const splitRows = splitsResult.rows?._array || [];
+      // Fetch splits and exercises in one batched query each instead of
+      // nested per-row queries.
+      const routineIds = routineRows.map((r: any) => r.id);
+      const splitsResult = await db.execute(
+        `SELECT id, routine_id, name, order_index FROM splits
+         WHERE routine_id IN (${routineIds.map(() => '?').join(', ')})
+         ORDER BY order_index ASC`,
+        routineIds
+      );
+      const splitRows = splitsResult.rows?._array || [];
 
-        const splits: Split[] = [];
-        for (const split of splitRows) {
-          const exercisesResult = await db.execute(
-            `SELECT id, exercise_name, wger_id, equipment, attachment, order_index
-             FROM routine_exercises WHERE split_id = ? ORDER BY order_index ASC`,
-            [split.id]
-          );
-          const exerciseRows = exercisesResult.rows?._array || [];
+      const splitIds = splitRows.map((s: any) => s.id);
+      const exerciseRows = splitIds.length
+        ? (
+            await db.execute(
+              `SELECT id, split_id, exercise_name, wger_id, equipment, attachment, order_index
+               FROM routine_exercises
+               WHERE split_id IN (${splitIds.map(() => '?').join(', ')})
+               ORDER BY order_index ASC`,
+              splitIds
+            )
+          ).rows?._array || []
+        : [];
 
-          splits.push({
-            id: split.id,
-            name: split.name,
-            order: split.order_index,
-            exercises: exerciseRows.map((ex: any) => ({
-              id: ex.id,
-              wgerId: ex.wger_id ?? null,
-              exerciseName: ex.exercise_name,
-              equipment: ex.equipment ? safeParseEquipment(ex.equipment) : [],
-              attachment: ex.attachment ?? null,
-              order: ex.order_index,
-            })),
-          });
-        }
-
-        result.push({
-          id: routine.id,
-          name: routine.name,
-          createdAt: routine.created_at,
-          updatedAt: routine.updated_at,
-          splits,
-        });
+      const exercisesBySplit = new Map<string, RoutineExercise[]>();
+      for (const ex of exerciseRows) {
+        const exercise: RoutineExercise = {
+          id: ex.id,
+          wgerId: ex.wger_id ?? null,
+          exerciseName: ex.exercise_name,
+          equipment: ex.equipment ? safeParseEquipment(ex.equipment) : [],
+          attachment: ex.attachment ?? null,
+          order: ex.order_index,
+        };
+        const list = exercisesBySplit.get(ex.split_id);
+        if (list) list.push(exercise);
+        else exercisesBySplit.set(ex.split_id, [exercise]);
       }
 
-      return result;
+      const splitsByRoutine = new Map<string, Split[]>();
+      for (const split of splitRows) {
+        const entry: Split = {
+          id: split.id,
+          name: split.name,
+          order: split.order_index,
+          exercises: exercisesBySplit.get(split.id) ?? [],
+        };
+        const list = splitsByRoutine.get(split.routine_id);
+        if (list) list.push(entry);
+        else splitsByRoutine.set(split.routine_id, [entry]);
+      }
+
+      return routineRows.map((routine: any) => ({
+        id: routine.id,
+        name: routine.name,
+        createdAt: routine.created_at,
+        updatedAt: routine.updated_at,
+        splits: splitsByRoutine.get(routine.id) ?? [],
+      }));
     },
   });
 }

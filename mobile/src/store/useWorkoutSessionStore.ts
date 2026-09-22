@@ -364,6 +364,9 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
 
             for (const exercise of exercises) {
               for (const entry of exercise.sets) {
+                // Skip sets the athlete never touched — they carry no data and
+                // would just be noise rows in the history.
+                if (isSetEmpty(entry)) continue;
                 await tx.execute(
                   `INSERT INTO ${WORKOUT_SETS_TABLE}
                      (id, workout_id, exercise_name, wger_id, order_index, set_number, set_type, weight, reps, rpe, is_completed, attachment, created_at)
@@ -373,7 +376,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                     workoutId,
                     exercise.name,
                     exercise.wgerId ?? null,
-                    entry.setIndex,
+                    exercise.orderIndex,
                     entry.setIndex,
                     entry.setType,
                     entry.weight,

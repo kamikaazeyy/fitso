@@ -17,11 +17,14 @@ interface WorkoutDashboardProps {
 }
 
 export function workoutVolume(sets: WorkoutWithSets['sets']): number {
-  return sets.reduce((sum, s) => sum + (Number(s.weightKg) || 0) * (Number(s.reps) || 0), 0);
+  return sets.reduce(
+    (sum, s) => (s.completed ? sum + (Number(s.weightKg) || 0) * (Number(s.reps) || 0) : sum),
+    0
+  );
 }
 
 export function workoutReps(sets: WorkoutWithSets['sets']): number {
-  return sets.reduce((sum, s) => sum + (Number(s.reps) || 0), 0);
+  return sets.reduce((sum, s) => (s.completed ? sum + (Number(s.reps) || 0) : sum), 0);
 }
 
 function formatDuration(totalSeconds: number): string {

@@ -18,6 +18,7 @@ import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { getAttachmentsForEquipment } from '@/constants/attachments';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { WORKOUTS_TABLE, WORKOUT_SETS_TABLE } from '@/src/db/AppSchema';
 import { usePowerSync } from '@powersync/react-native';
 import type { ActiveExercise, ActiveSet, Routine } from '@/src/types/workout';
 
@@ -38,22 +39,34 @@ function parseEquipment(raw: string | null | undefined): string[] {
   }
 }
 
-/** Fetch previous set data from local SQLite for "previous" hints. */
+/**
+ * Fetch previous set data from local SQLite for "previous" hints.
+ * Runs once per distinct exercise list — keying the effect on the exercise
+ * names rather than the `exercises` array, which gets a new identity on every
+ * keystroke and would otherwise fire one query per exercise per keypress.
+ */
 function usePreviousSetHints(exercises: ActiveExercise[]) {
   const db = usePowerSync();
   const [hints, setHints] = useState<Record<string, string>>({});
+  const exercisesRef = useRef(exercises);
+  exercisesRef.current = exercises;
+  const exerciseKey = exercises.map((ex) => `${ex.exerciseId}:${ex.name}`).join('|');
 
   useEffect(() => {
     const loadHints = async () => {
       const newHints: Record<string, string> = {};
-      for (const ex of exercises) {
+      for (const ex of exercisesRef.current) {
         try {
+          // Order by the workout's finish time (not created_at — that value is
+          // identical for every set in a workout) so hints come from the most
+          // recent session that trained this exercise.
           const result = await db.execute(
             `SELECT ws.weight, ws.reps, ws.set_number
-             FROM ${'workout_sets'} ws
+             FROM ${WORKOUT_SETS_TABLE} ws
+             JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
              WHERE ws.exercise_name = ?
                AND ws.is_completed = 1
-             ORDER BY ws.created_at DESC
+             ORDER BY w.finished_at DESC, ws.set_number ASC
              LIMIT 10`,
             [ex.name]
           );
@@ -72,10 +85,10 @@ function usePreviousSetHints(exercises: ActiveExercise[]) {
       setHints(newHints);
     };
 
-    if (exercises.length > 0) {
+    if (exerciseKey.length > 0) {
       loadHints();
     }
-  }, [db, exercises]);
+  }, [db, exerciseKey]);
 
   return hints;
 }
@@ -238,6 +251,16 @@ export default function WorkoutScreen() {
     }
   }, [pendingExercise, consumePendingExercise, addExercise]);
 
+  // The session lives in the store (persisted to MMKV), so leaving the screen
+  // is just a minimize — the Training tab banner offers a way back in.
+  const exitScreen = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/journal');
+    }
+  };
+
   const handleFinish = async () => {
     if (!isActive) return;
     if (exercises.length === 0) {
@@ -250,7 +273,7 @@ export default function WorkoutScreen() {
       queryClient.invalidateQueries({ queryKey: ['workouts'] });
       queryClient.invalidateQueries({ queryKey: ['routines'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      router.back();
+      exitScreen();
     } catch (err) {
       Alert.alert('Failed to save', err instanceof Error ? err.message : 'Could not save workout');
     }
@@ -267,7 +290,7 @@ export default function WorkoutScreen() {
           style: 'destructive',
           onPress: () => {
             discardWorkout();
-            router.back();
+            exitScreen();
           },
         },
       ]
@@ -289,11 +312,12 @@ export default function WorkoutScreen() {
         <View className="flex-row items-center justify-between px-4 py-4 bg-black">
           <View className="flex-row items-center flex-1">
             <TouchableOpacity
-              onPress={handleDiscard}
+              onPress={exitScreen}
               activeOpacity={0.7}
+              accessibilityLabel="Minimize workout"
               className="mr-3 p-2 rounded-full bg-[#1C1C1E]"
             >
-              <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+              <Ionicons name="chevron-down" size={22} color="#FFFFFF" />
             </TouchableOpacity>
             <View className="flex-1">
               <Text className="text-white text-lg font-extrabold tracking-tight" numberOfLines={1}>
@@ -311,14 +335,24 @@ export default function WorkoutScreen() {
               </View>
             </View>
           </View>
-          <TouchableOpacity
-            activeOpacity={0.85}
-            disabled={isSaving}
-            className={`rounded-xl px-5 py-2.5 ${isSaving ? 'bg-[#E63946]/50' : 'bg-[#E63946]'}`}
-            onPress={handleFinish}
-          >
-            <Text className="text-white font-bold text-sm">{isSaving ? 'Saving...' : 'Finish'}</Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center">
+            <TouchableOpacity
+              onPress={handleDiscard}
+              activeOpacity={0.7}
+              accessibilityLabel="Discard workout"
+              className="mr-3 p-2.5 rounded-full bg-[#1C1C1E]"
+            >
+              <Ionicons name="trash-outline" size={18} color="#E63946" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={isSaving}
+              className={`rounded-xl px-5 py-2.5 ${isSaving ? 'bg-[#E63946]/50' : 'bg-[#E63946]'}`}
+              onPress={handleFinish}
+            >
+              <Text className="text-white font-bold text-sm">{isSaving ? 'Saving...' : 'Finish'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Scrollable Exercise Cards */}

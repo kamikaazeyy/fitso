@@ -35,11 +35,7 @@ const DUMMY_PROFILE: ProfileData = {
 };
 
 export default function ProfileScreen() {
-  const { data, status } = useLoadableData<ProfileData>(
-    () => Promise.resolve(DUMMY_PROFILE),
-    [],
-    { loadingDelay: 500 }
-  );
+  const { data, status } = useLoadableData<ProfileData>(() => Promise.resolve(DUMMY_PROFILE), []);
   const { logout } = useAuth();
 
   return (

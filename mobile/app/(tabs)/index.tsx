@@ -14,6 +14,7 @@ import { SegmentedCalorieRing } from '@/components/SegmentedCalorieRing';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { useDashboardData } from '@/src/hooks/useDashboard';
+import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 import { colors } from '@/constants/theme';
 
 const MEAL_DATA = {
@@ -33,6 +34,14 @@ async function fetchHomeMeals(): Promise<typeof MEAL_DATA> {
   return MEAL_DATA;
 }
 
+function formatDuration(totalSeconds: number): string {
+  return `${Math.floor(totalSeconds / 60)} min`;
+}
+
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 function MacroIconBars({ color }: { color: string }) {
   return (
     <View className="w-5 h-5 mr-3 items-end justify-center">
@@ -46,9 +55,10 @@ function MacroIconBars({ color }: { color: string }) {
 export default function HomeScreen() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const isWorkoutActive = useWorkoutSessionStore((s) => s.isActive);
 
   const { data: dashboard, isLoading: isLoadingNutrition, error: nutritionError } = useDashboardData();
-  const meals = useLoadableData(fetchHomeMeals, [], { loadingDelay: 800 });
+  const meals = useLoadableData(fetchHomeMeals, []);
 
   const nutrition = dashboard?.nutrition ?? { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 };
 
@@ -230,14 +240,52 @@ export default function HomeScreen() {
           </LoadableContainer>
         </View>
 
-        {/* Start Workout CTA */}
+        {/* Recent Sessions */}
+        {dashboard && dashboard.recentWorkouts.length > 0 && (
+          <View className="mb-4">
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-white text-lg font-bold">Recent sessions</Text>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push('/(tabs)/analytics')}
+              >
+                <Text className="text-[#E63946] text-sm font-semibold">Progress</Text>
+              </TouchableOpacity>
+            </View>
+            <View className="bg-[#121212] rounded-[20px] px-4">
+              {dashboard.recentWorkouts.map((w) => (
+                <View
+                  key={w.id}
+                  className="flex-row items-center justify-between py-3 border-b border-[#1C1C1E] last:border-b-0"
+                >
+                  <View className="flex-1 pr-3">
+                    <Text className="text-white font-semibold" numberOfLines={1}>
+                      {w.title || 'Workout'}
+                    </Text>
+                    <Text className="text-[#A0A0A0] text-xs">{formatDate(w.completedAt)}</Text>
+                  </View>
+                  <Text className="text-[#A0A0A0] text-sm">
+                    {formatDuration(w.durationSeconds)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Start Workout CTA — Training is the single place to pick a routine
+            or start a quick workout; an active session resumes in place. */}
         <TouchableOpacity
           activeOpacity={0.85}
           className="bg-[#E63946] rounded-[20px] flex-row items-center justify-center py-4 mb-4"
-          onPress={() => router.push('/workout')}
+          onPress={() =>
+            isWorkoutActive ? router.push('/workout') : router.push('/(tabs)/journal')
+          }
         >
           <Ionicons name="barbell" size={20} color="#FFFFFF" />
-          <Text className="text-white font-bold text-base ml-2">Start Workout</Text>
+          <Text className="text-white font-bold text-base ml-2">
+            {isWorkoutActive ? 'Resume Workout' : 'Start Workout'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
