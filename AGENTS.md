@@ -63,11 +63,15 @@ PowerSync's sync protocol handles this automatically. Sync rules in
 The mobile app's `BackendConnector.uploadData()` grabs pending CRUD operations
 via `getCrudBatch()`, POSTs them to `POST /api/sync/upload` on the Fastify
 backend, which applies them to Postgres via Prisma. The server:
+- Applies the whole batch in a single transaction (all-or-nothing; client retries on failure)
 - Maps snake_case SQLite columns → camelCase Prisma fields
 - Coerces null to schema defaults for non-nullable fields (weight→0, reps→0)
 - Transforms booleans (0/1 → true/false), arrays (JSON string → array), dates (ISO → Date)
 - Overrides `userId` with the JWT-authenticated user for security
-- Handles `PATCH` via upsert and `DELETE` P2025 (not found) as success
+- Verifies row ownership before every write — child tables (workout_sets, splits,
+  routine_exercises) are checked via their parent chain, so a client can't write
+  to another user's rows
+- Handles `PATCH` as update-only (P2025 = success) and `DELETE` P2025 (not found) as success
 
 ## Schema alignment
 - **Postgres tables**: camelCase columns (Prisma convention) — `"Workout"`, `"userId"`, `"exerciseName"`

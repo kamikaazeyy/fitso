@@ -9,16 +9,29 @@ const jwt = require('jsonwebtoken');
 const app = Fastify({ logger: true });
 const prisma = new PrismaClient();
 
-// Load RSA private key for RS256 JWT signing
+// Load RSA private key for RS256 JWT signing. HS256 via JWT_SECRET is a
+// development fallback only — in production a missing key is a fatal
+// misconfiguration, since a guessed/default secret would let anyone forge
+// tokens (and therefore impersonate any user to PowerSync).
 const PRIVATE_KEY_PATH = path.join(__dirname, 'keys', 'jwt-private.pem');
-const JWT_PRIVATE_KEY = fs.existsSync(PRIVATE_KEY_PATH)
+let JWT_PRIVATE_KEY = fs.existsSync(PRIVATE_KEY_PATH)
   ? fs.readFileSync(PRIVATE_KEY_PATH, 'utf8')
-  : process.env.JWT_SECRET || 'fitso-dev-secret-change-me';
+  : process.env.JWT_SECRET;
+
+if (!JWT_PRIVATE_KEY) {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'No JWT signing key configured. Mount keys/jwt-private.pem or set JWT_SECRET.'
+    );
+  }
+  JWT_PRIVATE_KEY = 'fitso-dev-secret-change-me';
+  app.log.warn('Using insecure development JWT secret — do not use in production');
+}
 
 const JWT_ALGORITHM = JWT_PRIVATE_KEY.includes('BEGIN') ? 'RS256' : 'HS256';
 const JWT_AUDIENCE = 'powersync';
 
-app.register(cors, { origin: '*' });
+app.register(cors, { origin: process.env.CORS_ORIGIN || '*' });
 
 // Health checks
 app.get('/health', async () => ({ status: 'ok', server: 'fastify-prisma' }));
@@ -45,6 +58,26 @@ async function authenticate(request, reply) {
   return reply.code(401).send({ error: 'Unauthorized' });
 }
 
+// Fixed-window in-memory rate limiter for auth endpoints (brute-force
+// protection). Single-process is fine — this server runs as one container.
+const AUTH_RATE_MAX = 10;
+const AUTH_RATE_WINDOW_MS = 60_000;
+const authAttempts = new Map();
+
+async function rateLimitAuth(request, reply) {
+  const key = `${request.ip}:${request.routeOptions.url}`;
+  const now = Date.now();
+  let entry = authAttempts.get(key);
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + AUTH_RATE_WINDOW_MS };
+    authAttempts.set(key, entry);
+  }
+  entry.count += 1;
+  if (entry.count > AUTH_RATE_MAX) {
+    return reply.code(429).send({ error: 'Too many attempts — try again later' });
+  }
+}
+
 function createToken(userId) {
   return jwt.sign({ sub: userId, aud: JWT_AUDIENCE }, JWT_PRIVATE_KEY, {
     algorithm: JWT_ALGORITHM,
@@ -54,7 +87,7 @@ function createToken(userId) {
 }
 
 // Auth: Sign Up
-app.post('/api/auth/signup', async (request, reply) => {
+app.post('/api/auth/signup', { preHandler: rateLimitAuth }, async (request, reply) => {
   const { email, password, name } = request.body || {};
 
   if (!email || !password) {
@@ -89,7 +122,7 @@ app.post('/api/auth/signup', async (request, reply) => {
 });
 
 // Auth: Log In
-app.post('/api/auth/login', async (request, reply) => {
+app.post('/api/auth/login', { preHandler: rateLimitAuth }, async (request, reply) => {
   const { email, password } = request.body || {};
 
   if (!email || !password) {
@@ -458,6 +491,76 @@ const NON_NULLABLE_DEFAULTS = {
   duration_seconds: 0,
 };
 
+// Error type for a single failed sync operation. Carries enough context to
+// report back to the client; thrown inside the upload transaction so the
+// whole batch rolls back.
+class SyncOpError extends Error {
+  constructor(id, table, message, statusCode = 500) {
+    super(message);
+    this.opId = id;
+    this.opTable = table;
+    this.statusCode = statusCode;
+  }
+}
+
+// Resolves which user owns row `id` in `table`, walking up the parent chain
+// for child tables (workout_sets → workout, splits → routine,
+// routine_exercises → split → routine). For PUT creates the row doesn't
+// exist yet, so the parent id is taken from opData instead. Returns null
+// when no owner can be determined — e.g. a create whose parent isn't in
+// Postgres yet; the FK constraint will reject the write anyway.
+async function resolveOwnerId(table, id, opData, tx) {
+  const userIdOf = (row) => row?.userId ?? null;
+
+  switch (table) {
+    case 'workouts':
+      return userIdOf(
+        await tx.workout.findUnique({ where: { id }, select: { userId: true } })
+      );
+    case 'routines':
+      return userIdOf(
+        await tx.routine.findUnique({ where: { id }, select: { userId: true } })
+      );
+    case 'workout_sets': {
+      const row = await tx.workoutSet.findUnique({
+        where: { id },
+        select: { workoutId: true },
+      });
+      const workoutId = row?.workoutId ?? opData.workoutId;
+      if (!workoutId) return null;
+      return userIdOf(
+        await tx.workout.findUnique({ where: { id: workoutId }, select: { userId: true } })
+      );
+    }
+    case 'splits': {
+      const row = await tx.split.findUnique({
+        where: { id },
+        select: { routineId: true },
+      });
+      const routineId = row?.routineId ?? opData.routineId;
+      if (!routineId) return null;
+      return userIdOf(
+        await tx.routine.findUnique({ where: { id: routineId }, select: { userId: true } })
+      );
+    }
+    case 'routine_exercises': {
+      const row = await tx.routineExercise.findUnique({
+        where: { id },
+        select: { splitId: true },
+      });
+      const splitId = row?.splitId ?? opData.splitId;
+      if (!splitId) return null;
+      const split = await tx.split.findUnique({
+        where: { id: splitId },
+        select: { routine: { select: { userId: true } } },
+      });
+      return split?.routine?.userId ?? null;
+    }
+    default:
+      return null;
+  }
+}
+
 function transformOpData(table, opData) {
   const transformed = {};
   for (const [key, value] of Object.entries(opData)) {
@@ -502,81 +605,92 @@ app.post('/api/sync/upload', { preHandler: authenticate }, async (request, reply
     return reply.send({ applied: 0 });
   }
 
-  let applied = 0;
-  const errors = [];
+  try {
+    // Apply the batch atomically. Ops are idempotent and the client retries
+    // the whole batch on failure, so all-or-nothing is safe and prevents
+    // partial state if a mid-batch op fails.
+    const applied = await prisma.$transaction(async (tx) => {
+      let count = 0;
 
-  for (const op of operations) {
-    const { table, op: opType, id, data } = op;
-    const modelName = TABLE_TO_PRISMA[table];
+      for (const op of operations) {
+        const { table, op: opType, id, data } = op;
+        const modelName = TABLE_TO_PRISMA[table];
 
-    if (!modelName) {
-      errors.push({ id, table, error: `Unknown table: ${table}` });
-      continue;
-    }
-
-    const prismaModel = prisma[modelName];
-    let opData = transformOpData(table, data || {});
-
-    // Security: override userId with the authenticated user's id so a
-    // compromised client can't write data to another user's account.
-    if (TABLES_WITH_USER_ID.has(table)) {
-      opData.userId = request.userId;
-    }
-
-    try {
-      if (opType === 'PUT') {
-        // Upsert (INSERT or replace)
-        await prismaModel.upsert({
-          where: { id },
-          create: { ...opData, id },
-          update: opData,
-        });
-      } else if (opType === 'PATCH') {
-        // Use upsert so a PATCH on a not-yet-inserted row doesn't throw P2025.
-        // This can happen if operations are reordered or retried.
-        await prismaModel.upsert({
-          where: { id },
-          create: { ...opData, id },
-          update: opData,
-        });
-      } else if (opType === 'DELETE') {
-        try {
-          await prismaModel.delete({
-            where: { id },
-          });
-        } catch (deleteError) {
-          // P2025 = record not found — it's already gone, which is the
-          // desired state. Treat as success instead of poisoning the queue.
-          if (deleteError.code !== 'P2025') throw deleteError;
+        if (!modelName) {
+          throw new SyncOpError(id, table, `Unknown table: ${table}`);
         }
-      } else {
-        errors.push({ id, table, error: `Unknown op: ${opType}` });
-        continue;
-      }
-      applied += 1;
-    } catch (error) {
-      // P2025 on update = record not found; treat as success (already deleted
-      // or never existed — the desired state has been reached).
-      if (error.code === 'P2025') {
-        applied += 1;
-        continue;
-      }
-      app.log.error({ err: error.message, table, opType, id }, 'sync upload operation failed');
-      errors.push({ id, table, error: error.message });
-    }
-  }
 
-  if (errors.length > 0) {
-    return reply.code(500).send({ applied, errors });
+        const prismaModel = tx[modelName];
+        const opData = transformOpData(table, data || {});
+
+        // Security: override userId with the authenticated user's id so a
+        // compromised client can't write data to another user's account.
+        if (TABLES_WITH_USER_ID.has(table)) {
+          opData.userId = request.userId;
+        }
+
+        // Security: verify ownership of the target row (or its parent for
+        // child tables). Without this, a client could UPDATE/DELETE another
+        // user's rows, or INSERT a child row under another user's parent.
+        const ownerId = await resolveOwnerId(table, id, opData, tx);
+        if (ownerId && ownerId !== request.userId) {
+          throw new SyncOpError(id, table, 'Row belongs to another user', 403);
+        }
+
+        if (opType === 'PUT') {
+          // Upsert (INSERT or replace)
+          await prismaModel.upsert({
+            where: { id },
+            create: { ...opData, id },
+            update: opData,
+          });
+        } else if (opType === 'PATCH') {
+          // Update only — no upsert. A PATCH carrying partial opData must not
+          // create a half-populated row if the original PUT hasn't been
+          // applied yet (reordered/retried ops). P2025 (row missing) means
+          // there is nothing to patch, which is the desired end state.
+          try {
+            await prismaModel.update({ where: { id }, data: opData });
+          } catch (error) {
+            if (error.code !== 'P2025') throw error;
+          }
+        } else if (opType === 'DELETE') {
+          try {
+            await prismaModel.delete({ where: { id } });
+          } catch (error) {
+            // P2025 = record not found — it's already gone, which is the
+            // desired state. Treat as success instead of poisoning the queue.
+            if (error.code !== 'P2025') throw error;
+          }
+        } else {
+          throw new SyncOpError(id, table, `Unknown op: ${opType}`);
+        }
+        count += 1;
+      }
+
+      return count;
+    });
+
+    return reply.send({ applied });
+  } catch (error) {
+    const statusCode = error instanceof SyncOpError ? error.statusCode : 500;
+    app.log.error(
+      { err: error.message, table: error.opTable, id: error.opId },
+      'sync upload batch failed'
+    );
+    return reply.code(statusCode).send({
+      applied: 0,
+      errors: [{ id: error.opId, table: error.opTable, error: error.message }],
+    });
   }
-  return reply.send({ applied });
 });
 
 // Bootstrap Server
 const start = async () => {
   try {
-    await app.listen({ port: 3000, host: '0.0.0.0' });
-    app.log.info(`Server running on port 3000 (JWT: ${JWT_ALGORITHM})`);
+    const port = parseInt(process.env.PORT, 10) || 3000;
+    await app.listen({ port, host: '0.0.0.0' });
+    app.log.info(`Server running on port ${port} (JWT: ${JWT_ALGORITHM})`);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
