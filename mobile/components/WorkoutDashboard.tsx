@@ -3,8 +3,10 @@ import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { OverloadLineChart, VolumeBarChart } from '@/components/ProgressCharts';
 import type { LoadableStatus } from '@/hooks/useLoadableData';
 import type { WorkoutWithSets } from '@/src/hooks/useWorkouts';
+import { estimateOneRepMax } from '@/src/utils/oneRepMax';
 import { colors } from '@/constants/theme';
 
 interface WorkoutDashboardProps {
@@ -87,6 +89,54 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
     [workouts]
   );
 
+  // useWorkouts returns newest-first; charts read oldest → newest.
+  const chronological = useMemo(() => [...workouts].reverse(), [workouts]);
+
+  const sessionVolumes = useMemo(
+    () =>
+      chronological.slice(-12).map((w) => ({
+        label: formatDate(w.completedAt),
+        value: workoutVolume(w.sets.filter((s) => s.completed)),
+      })),
+    [chronological]
+  );
+
+  // Progressive overload: best estimated 1RM per exercise per session,
+  // for the 3 most frequently trained exercises.
+  const overload = useMemo(() => {
+    const recent = chronological.slice(-14);
+    const perWorkoutBest = recent.map((w) => {
+      const best = new Map<string, number>();
+      for (const s of w.sets) {
+        if (!s.completed) continue;
+        const e1rm = estimateOneRepMax(Number(s.weightKg) || 0, Number(s.reps) || 0);
+        if (e1rm === null) continue;
+        const current = best.get(s.exerciseName);
+        if (current === undefined || e1rm > current) best.set(s.exerciseName, e1rm);
+      }
+      return best;
+    });
+
+    const counts = new Map<string, number>();
+    for (const best of perWorkoutBest) {
+      for (const name of best.keys()) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    const topExercises = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => name);
+
+    const palette = [colors.cta, colors.cyan, colors.yellow];
+    return {
+      series: topExercises.map((name, i) => ({
+        name,
+        color: palette[i],
+        points: perWorkoutBest.map((best) => best.get(name) ?? null),
+      })),
+      labels: recent.map((w) => formatDate(w.completedAt)),
+    };
+  }, [chronological]);
+
   return (
     <LoadableContainer
       status={status}
@@ -121,6 +171,18 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
           </View>
         </View>
 
+        {/* Session volume chart */}
+        <View className="bg-[#121212] rounded-[20px] p-4 mb-4">
+          <Text className="text-white text-lg font-bold mb-3">Session Volume</Text>
+          <VolumeBarChart data={sessionVolumes} />
+        </View>
+
+        {/* Progressive overload chart */}
+        <View className="bg-[#121212] rounded-[20px] p-4 mb-4">
+          <Text className="text-white text-lg font-bold mb-3">Est. 1RM Trend</Text>
+          <OverloadLineChart series={overload.series} labels={overload.labels} />
+        </View>
+
         {/* Recent Workouts */}
         <View className="bg-[#121212] rounded-[20px] p-4 mb-4">
           <View className="flex-row items-center justify-between mb-3">
@@ -153,7 +215,7 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
         {/* Personal Records / Progressive Overload */}
         <View className="bg-[#121212] rounded-[20px] p-4 mb-4">
           <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-white text-lg font-bold">Progressive Overload</Text>
+            <Text className="text-white text-lg font-bold">Personal Records</Text>
           </View>
           {stats.personalRecords.length === 0 ? (
             <Text className="text-[#A0A0A0] text-sm">Complete sets to see your personal records.</Text>

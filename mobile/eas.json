@@ -13,6 +13,7 @@
       }
     },
     "preview": {
+      "channel": "preview",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -23,6 +24,7 @@
       }
     },
     "production": {
+      "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "http://100.70.218.115",
         "EXPO_PUBLIC_POWERSYNC_URL": "http://100.70.218.115/powersync"

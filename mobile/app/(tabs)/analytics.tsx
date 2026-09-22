@@ -7,7 +7,9 @@ import { colors } from '@/constants/theme';
 export default function ProgressScreen() {
   const { data, isLoading, error } = useWorkouts(50, 0);
 
-  const status = isLoading ? 'loading' : error || !data || data.length === 0 ? 'empty' : 'data';
+  // Empty data still renders the dashboard — charts and stat cards handle
+  // zero-state themselves so the screen isn't blank for new users.
+  const status = isLoading ? 'loading' : error ? 'empty' : 'data';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>

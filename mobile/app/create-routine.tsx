@@ -11,29 +11,43 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePowerSync } from '@powersync/react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
-import { client } from '@/src/api/client';
+import { useAuth } from '@/context/AuthContext';
+import { ROUTINE_EXERCISES_TABLE, ROUTINES_TABLE, SPLITS_TABLE } from '@/src/db/AppSchema';
+import { uuid } from '@/src/utils/id';
+
+interface DraftExercise extends PendingExercise {
+  targetSets: number;
+  targetReps: number | null;
+}
 
 export default function CreateRoutineScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const db = usePowerSync();
+  const { user } = useAuth();
   const { pendingExercise, consumePendingExercise } = useWorkout();
 
   const [name, setName] = useState('');
   const [splitName, setSplitName] = useState('');
-  const [exercises, setExercises] = useState<PendingExercise[]>([]);
+  const [exercises, setExercises] = useState<DraftExercise[]>([]);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const pending = consumePendingExercise();
     if (pending) {
-      setExercises((prev) => [...prev, pending]);
+      setExercises((prev) => [...prev, { ...pending, targetSets: 3, targetReps: null }]);
     }
   }, [pendingExercise, consumePendingExercise]);
 
   const removeExercise = (index: number) => {
     setExercises((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateExercise = (index: number, patch: Partial<DraftExercise>) => {
+    setExercises((prev) => prev.map((ex, i) => (i === index ? { ...ex, ...patch } : ex)));
   };
 
   const handleSave = async () => {
@@ -45,23 +59,52 @@ export default function CreateRoutineScreen() {
       Alert.alert('Add exercises', 'A routine needs at least one exercise.');
       return;
     }
+    if (!user?.id) {
+      Alert.alert('Not signed in', 'Sign in again and retry.');
+      return;
+    }
 
     setSaving(true);
     try {
-      await client.post('/api/routines', {
-        name: name.trim(),
-        splits: [
-          {
-            name: splitName.trim() || 'Split 1',
-            exercises: exercises.map((ex, order) => ({
-              wgerId: ex.wgerId || null,
-              exerciseName: ex.name,
-              equipment: ex.equipment,
-              attachment: null,
+      const now = new Date().toISOString();
+      const routineId = uuid();
+      const splitId = uuid();
+
+      // Write to local SQLite — PowerSync queues the INSERTs and pushes them
+      // to Postgres via /api/sync/upload, so this works fully offline.
+      await db.writeTransaction(async (tx) => {
+        await tx.execute(
+          `INSERT INTO ${ROUTINES_TABLE} (id, user_id, name, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [routineId, user.id, name.trim(), null, now, now]
+        );
+        await tx.execute(
+          `INSERT INTO ${SPLITS_TABLE} (id, routine_id, name, order_index, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [splitId, routineId, splitName.trim() || 'Split 1', 0, now]
+        );
+        for (const [order, ex] of exercises.entries()) {
+          await tx.execute(
+            `INSERT INTO ${ROUTINE_EXERCISES_TABLE}
+               (id, split_id, exercise_name, wger_id, equipment, attachment, order_index,
+                target_sets, target_reps, target_weight, rest_seconds, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              uuid(),
+              splitId,
+              ex.name,
+              ex.wgerId ?? null,
+              JSON.stringify(ex.equipment ?? []),
+              null,
               order,
-            })),
-          },
-        ],
+              Math.max(1, Math.round(ex.targetSets)) || 3,
+              ex.targetReps,
+              null,
+              null,
+              now,
+            ]
+          );
+        }
       });
       queryClient.invalidateQueries({ queryKey: ['routines'] });
       router.back();
@@ -145,21 +188,55 @@ export default function CreateRoutineScreen() {
         {exercises.map((ex, index) => (
           <View
             key={`${ex.id}-${index}`}
-            className="bg-[#121212] rounded-[20px] p-4 mb-3 flex-row items-center justify-between"
+            className="bg-[#121212] rounded-[20px] p-4 mb-3"
           >
-            <View className="flex-1">
-              <Text className="text-white font-bold" numberOfLines={1}>
-                {ex.name}
-              </Text>
-              {ex.equipment.length > 0 && (
-                <Text className="text-[#A0A0A0] text-xs mt-0.5">
-                  {ex.equipment.join(', ')}
+            <View className="flex-row items-center justify-between">
+              <View className="flex-1">
+                <Text className="text-white font-bold" numberOfLines={1}>
+                  {ex.name}
                 </Text>
-              )}
+                {ex.equipment.length > 0 && (
+                  <Text className="text-[#A0A0A0] text-xs mt-0.5">
+                    {ex.equipment.join(', ')}
+                  </Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => removeExercise(index)} activeOpacity={0.7} className="p-2">
+                <Ionicons name="trash-outline" size={20} color="#E63946" />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity onPress={() => removeExercise(index)} activeOpacity={0.7} className="p-2">
-              <Ionicons name="trash-outline" size={20} color="#E63946" />
-            </TouchableOpacity>
+            <View className="flex-row items-center mt-3">
+              <View className="flex-row items-center mr-4">
+                <Text className="text-[#A0A0A0] text-xs font-semibold mr-2 uppercase">Sets</Text>
+                <TextInput
+                  value={String(ex.targetSets)}
+                  onChangeText={(val) => {
+                    const parsed = parseInt(val, 10);
+                    updateExercise(index, { targetSets: Number.isNaN(parsed) ? 1 : parsed });
+                  }}
+                  keyboardType="numeric"
+                  className="w-14 h-9 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold"
+                />
+              </View>
+              <View className="flex-row items-center">
+                <Text className="text-[#A0A0A0] text-xs font-semibold mr-2 uppercase">Reps</Text>
+                <TextInput
+                  value={ex.targetReps !== null ? String(ex.targetReps) : ''}
+                  onChangeText={(val) => {
+                    if (val === '') {
+                      updateExercise(index, { targetReps: null });
+                      return;
+                    }
+                    const parsed = parseInt(val, 10);
+                    if (!Number.isNaN(parsed)) updateExercise(index, { targetReps: parsed });
+                  }}
+                  keyboardType="numeric"
+                  placeholder="—"
+                  placeholderTextColor="#555"
+                  className="w-14 h-9 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold"
+                />
+              </View>
+            </View>
           </View>
         ))}
 
