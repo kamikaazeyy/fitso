@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { usePowerSync } from '@powersync/react-native';
+import { useMemo } from 'react';
+import { useQuery } from '@powersync/react-native';
 
 export interface WorkoutSet {
   id: string;
@@ -22,60 +22,78 @@ export interface WorkoutWithSets {
   sets: WorkoutSet[];
 }
 
+interface WorkoutRow {
+  id: string;
+  user_id: string;
+  title: string;
+  duration_seconds: number | null;
+  finished_at: string;
+}
+
+interface WorkoutSetRow {
+  id: string;
+  workout_id: string;
+  exercise_name: string;
+  wger_id: number | null;
+  set_number: number;
+  weight: number | null;
+  reps: number | null;
+  is_completed: number;
+  attachment: string | null;
+}
+
+/**
+ * Reads finished workouts from local SQLite using PowerSync watched queries,
+ * which re-emit whenever the underlying tables change — including writes
+ * applied by the sync engine. Sets are joined client-side.
+ */
 export function useWorkouts(limit = 50, offset = 0) {
-  const db = usePowerSync();
+  const workoutsResult = useQuery<WorkoutRow>(
+    `SELECT id, user_id, title, duration_seconds, finished_at
+     FROM workouts
+     WHERE finished_at IS NOT NULL
+     ORDER BY finished_at DESC
+     LIMIT ? OFFSET ?`,
+    [limit, offset]
+  );
+  const setsResult = useQuery<WorkoutSetRow>(
+    `SELECT id, workout_id, exercise_name, wger_id, set_number, weight, reps, is_completed, attachment
+     FROM workout_sets
+     ORDER BY order_index ASC, set_number ASC`
+  );
 
-  return useQuery<WorkoutWithSets[]>({
-    queryKey: ['workouts', limit, offset],
-    queryFn: async () => {
-      const workoutsResult = await db.execute(
-        `SELECT id, user_id, title, duration_seconds, finished_at
-         FROM workouts
-         WHERE finished_at IS NOT NULL
-         ORDER BY finished_at DESC
-         LIMIT ? OFFSET ?`,
-        [limit, offset]
-      );
-      const workoutRows = workoutsResult.rows?._array || [];
-      if (workoutRows.length === 0) return [];
+  const isLoading = workoutsResult.isLoading || setsResult.isLoading;
+  const error = workoutsResult.error ?? setsResult.error ?? null;
 
-      // One batched query for all sets instead of one query per workout —
-      // order_index (exercise order) then set_number groups them per exercise.
-      const placeholders = workoutRows.map(() => '?').join(', ');
-      const setsResult = await db.execute(
-        `SELECT id, workout_id, exercise_name, wger_id, set_number, weight, reps, is_completed, attachment
-         FROM workout_sets
-         WHERE workout_id IN (${placeholders})
-         ORDER BY order_index ASC, set_number ASC`,
-        workoutRows.map((w: any) => w.id)
-      );
+  const data = useMemo<WorkoutWithSets[] | undefined>(() => {
+    if (isLoading) return undefined;
 
-      const setsByWorkout = new Map<string, WorkoutSet[]>();
-      for (const s of setsResult.rows?._array || []) {
-        const set: WorkoutSet = {
-          id: s.id,
-          workoutId: s.workout_id,
-          exerciseName: s.exercise_name,
-          wgerId: s.wger_id ?? null,
-          setNumber: s.set_number,
-          weightKg: s.weight ?? 0,
-          reps: s.reps ?? 0,
-          completed: s.is_completed === 1,
-          attachment: s.attachment ?? null,
-        };
-        const list = setsByWorkout.get(s.workout_id);
-        if (list) list.push(set);
-        else setsByWorkout.set(s.workout_id, [set]);
-      }
+    const setsByWorkout = new Map<string, WorkoutSet[]>();
+    for (const s of setsResult.data) {
+      const list = setsByWorkout.get(s.workout_id) ?? [];
+      list.push({
+        id: s.id,
+        workoutId: s.workout_id,
+        exerciseName: s.exercise_name,
+        wgerId: s.wger_id ?? null,
+        setNumber: s.set_number,
+        weightKg: s.weight ?? 0,
+        reps: s.reps ?? 0,
+        completed: s.is_completed === 1,
+        attachment: s.attachment ?? null,
+      });
+      setsByWorkout.set(s.workout_id, list);
+    }
 
-      return workoutRows.map((workout: any) => ({
-        id: workout.id,
-        userId: workout.user_id,
-        title: workout.title,
-        durationSeconds: workout.duration_seconds ?? 0,
-        completedAt: workout.finished_at,
-        sets: setsByWorkout.get(workout.id) ?? [],
-      }));
-    },
-  });
+    return workoutsResult.data.map((workout) => ({
+      id: workout.id,
+      userId: workout.user_id,
+      title: workout.title,
+      durationSeconds: workout.duration_seconds ?? 0,
+      completedAt: workout.finished_at,
+      sets: setsByWorkout.get(workout.id) ?? [],
+    }));
+  }, [isLoading, workoutsResult.data, setsResult.data]);
+
+  return { data, isLoading, error };
 }

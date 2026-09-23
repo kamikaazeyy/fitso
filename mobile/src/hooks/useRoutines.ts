@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { usePowerSync } from '@powersync/react-native';
+import { useMemo } from 'react';
+import { useQuery } from '@powersync/react-native';
 
 function safeParseEquipment(raw: string): string[] {
   try {
@@ -34,77 +34,90 @@ export interface Routine {
   splits: Split[];
 }
 
+interface RoutineRow {
+  id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SplitRow {
+  id: string;
+  routine_id: string;
+  name: string;
+  order_index: number;
+}
+
+interface RoutineExerciseRow {
+  id: string;
+  split_id: string;
+  exercise_name: string;
+  wger_id: number | null;
+  equipment: string | null;
+  attachment: string | null;
+  order_index: number;
+}
+
+/**
+ * Reads routines from local SQLite using PowerSync watched queries, which
+ * re-emit whenever the underlying tables change — including when the sync
+ * engine rewrites local rows during checkpoint reconciliation. The three
+ * result sets are joined client-side (routines → splits → exercises).
+ */
 export function useRoutines() {
-  const db = usePowerSync();
+  const routinesResult = useQuery<RoutineRow>(
+    `SELECT id, name, created_at, updated_at FROM routines ORDER BY updated_at DESC`
+  );
+  const splitsResult = useQuery<SplitRow>(
+    `SELECT id, routine_id, name, order_index FROM splits ORDER BY order_index ASC`
+  );
+  const exercisesResult = useQuery<RoutineExerciseRow>(
+    `SELECT id, split_id, exercise_name, wger_id, equipment, attachment, order_index
+     FROM routine_exercises ORDER BY order_index ASC`
+  );
 
-  return useQuery<Routine[]>({
-    queryKey: ['routines'],
-    queryFn: async () => {
-      const routinesResult = await db.execute(
-        `SELECT id, name, created_at, updated_at FROM routines ORDER BY updated_at DESC`
-      );
-      const routineRows = routinesResult.rows?._array || [];
-      if (routineRows.length === 0) return [];
+  const isLoading =
+    routinesResult.isLoading || splitsResult.isLoading || exercisesResult.isLoading;
+  const error =
+    routinesResult.error ?? splitsResult.error ?? exercisesResult.error ?? null;
 
-      // Fetch splits and exercises in one batched query each instead of
-      // nested per-row queries.
-      const routineIds = routineRows.map((r: any) => r.id);
-      const splitsResult = await db.execute(
-        `SELECT id, routine_id, name, order_index FROM splits
-         WHERE routine_id IN (${routineIds.map(() => '?').join(', ')})
-         ORDER BY order_index ASC`,
-        routineIds
-      );
-      const splitRows = splitsResult.rows?._array || [];
+  const data = useMemo<Routine[] | undefined>(() => {
+    if (isLoading) return undefined;
 
-      const splitIds = splitRows.map((s: any) => s.id);
-      const exerciseRows = splitIds.length
-        ? (
-            await db.execute(
-              `SELECT id, split_id, exercise_name, wger_id, equipment, attachment, order_index
-               FROM routine_exercises
-               WHERE split_id IN (${splitIds.map(() => '?').join(', ')})
-               ORDER BY order_index ASC`,
-              splitIds
-            )
-          ).rows?._array || []
-        : [];
+    const exercisesBySplit = new Map<string, RoutineExercise[]>();
+    for (const ex of exercisesResult.data) {
+      const list = exercisesBySplit.get(ex.split_id) ?? [];
+      list.push({
+        id: ex.id,
+        wgerId: ex.wger_id ?? null,
+        exerciseName: ex.exercise_name,
+        equipment: ex.equipment ? safeParseEquipment(ex.equipment) : [],
+        attachment: ex.attachment ?? null,
+        order: ex.order_index,
+      });
+      exercisesBySplit.set(ex.split_id, list);
+    }
 
-      const exercisesBySplit = new Map<string, RoutineExercise[]>();
-      for (const ex of exerciseRows) {
-        const exercise: RoutineExercise = {
-          id: ex.id,
-          wgerId: ex.wger_id ?? null,
-          exerciseName: ex.exercise_name,
-          equipment: ex.equipment ? safeParseEquipment(ex.equipment) : [],
-          attachment: ex.attachment ?? null,
-          order: ex.order_index,
-        };
-        const list = exercisesBySplit.get(ex.split_id);
-        if (list) list.push(exercise);
-        else exercisesBySplit.set(ex.split_id, [exercise]);
-      }
+    const splitsByRoutine = new Map<string, Split[]>();
+    for (const split of splitsResult.data) {
+      const list = splitsByRoutine.get(split.routine_id) ?? [];
+      list.push({
+        id: split.id,
+        name: split.name,
+        order: split.order_index,
+        exercises: exercisesBySplit.get(split.id) ?? [],
+      });
+      splitsByRoutine.set(split.routine_id, list);
+    }
 
-      const splitsByRoutine = new Map<string, Split[]>();
-      for (const split of splitRows) {
-        const entry: Split = {
-          id: split.id,
-          name: split.name,
-          order: split.order_index,
-          exercises: exercisesBySplit.get(split.id) ?? [],
-        };
-        const list = splitsByRoutine.get(split.routine_id);
-        if (list) list.push(entry);
-        else splitsByRoutine.set(split.routine_id, [entry]);
-      }
+    return routinesResult.data.map((routine) => ({
+      id: routine.id,
+      name: routine.name,
+      createdAt: routine.created_at,
+      updatedAt: routine.updated_at,
+      splits: splitsByRoutine.get(routine.id) ?? [],
+    }));
+  }, [isLoading, routinesResult.data, splitsResult.data, exercisesResult.data]);
 
-      return routineRows.map((routine: any) => ({
-        id: routine.id,
-        name: routine.name,
-        createdAt: routine.created_at,
-        updatedAt: routine.updated_at,
-        splits: splitsByRoutine.get(routine.id) ?? [],
-      }));
-    },
-  });
+  return { data, isLoading, error };
 }

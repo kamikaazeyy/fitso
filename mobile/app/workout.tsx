@@ -270,8 +270,6 @@ export default function WorkoutScreen() {
 
     try {
       await finishWorkout();
-      queryClient.invalidateQueries({ queryKey: ['workouts'] });
-      queryClient.invalidateQueries({ queryKey: ['routines'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       exitScreen();
     } catch (err) {
