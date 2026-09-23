@@ -94,10 +94,17 @@ async function rateLimitAuth(request, reply) {
   }
 }
 
-function createToken(userId) {
+// The session token authenticates against this REST API and lasts a week.
+// PowerSync rejects client JWTs whose iat→exp span exceeds 86400s
+// (PSYNC_S2104), so tokens handed to the sync engine are minted separately
+// with a shorter lifetime via POST /api/auth/sync-token.
+const SESSION_TOKEN_TTL = '7d';
+const SYNC_TOKEN_TTL = '24h';
+
+function createToken(userId, expiresIn = SESSION_TOKEN_TTL) {
   return jwt.sign({ sub: userId, aud: JWT_AUDIENCE }, JWT_PRIVATE_KEY, {
     algorithm: JWT_ALGORITHM,
-    expiresIn: '24h',
+    expiresIn,
     keyid: 'fitso-jwt-key-1',
   });
 }
@@ -182,6 +189,27 @@ app.get('/api/auth/verify', { preHandler: authenticate }, async (request, reply)
     return reply.code(404).send({ error: 'User not found' });
   }
   return reply.send({ user });
+});
+
+// Auth: Refresh — exchange a still-valid session token for a freshly minted
+// one. Fully expired tokens are rejected by `authenticate` (401); the client
+// falls back to re-login in that case.
+app.post('/api/auth/refresh', { preHandler: authenticate }, async (request, reply) => {
+  const user = await prisma.user.findUnique({
+    where: { id: request.userId },
+    select: { id: true, email: true, name: true, dailyCalorieGoal: true },
+  });
+  if (!user) {
+    return reply.code(404).send({ error: 'User not found' });
+  }
+  return reply.send({ token: createToken(user.id), user });
+});
+
+// Auth: PowerSync sync token. The 7-day session token can't be used on the
+// sync stream (PowerSync enforces iat→exp <= 86400s), so the connector trades
+// it here for a short-lived token scoped to the same user.
+app.post('/api/auth/sync-token', { preHandler: authenticate }, async (request, reply) => {
+  return reply.send({ token: createToken(request.userId, SYNC_TOKEN_TTL) });
 });
 
 // 1. Post Workout Endpoint

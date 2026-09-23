@@ -46,12 +46,13 @@ npx expo run:android                 # build and run on Android device
 ```
 
 ## Auth flow
-1. Mobile calls `POST /api/auth/login` → Fastify returns RS256 JWT with `sub` (user UUID) and `aud: "powersync"`
+1. Mobile calls `POST /api/auth/login` → Fastify returns RS256 session JWT with `sub` (user UUID) and `aud: "powersync"` (7-day expiry)
 2. JWT is stored in SecureStore and passed to `BackendConnector.setToken()`
-3. PowerSync client connects to sync server using the JWT
-4. Sync rules in `server/powersync/sync-config.yaml` scope data by `auth.user_id()`
-5. JWT expires in 24h (PowerSync requires max 86400s)
-6. On login, `AuthContext` sets the user id on the workout session store so `finishWorkout` writes the correct `user_id`
+3. `BackendConnector.fetchCredentials()` exchanges the session JWT for a 24h sync token via `POST /api/auth/sync-token` — PowerSync rejects tokens whose iat→exp span exceeds 86400s (PSYNC_S2104), so the 7d session token cannot be used on the sync stream directly
+4. PowerSync client connects to sync server using the sync token
+5. Sync rules in `server/powersync/sync-config.yaml` scope data by `auth.user_id()`
+6. `POST /api/auth/refresh` mints a fresh session token from a still-valid one; the axios client retries one refresh on 401 and `AuthContext` refreshes proactively when < 24h remains
+7. On login, `AuthContext` sets the user id on the workout session store so `finishWorkout` writes the correct `user_id`
 
 ## Sync architecture
 

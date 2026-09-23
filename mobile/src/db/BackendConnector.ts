@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import type { PowerSyncBackendConnector, PowerSyncCredentials } from '@powersync/react-native';
 import { client } from '@/src/api/client';
+import { decodeJwtExp } from '@/src/utils/jwt';
 
 const SYNC_ENDPOINT =
   process.env.EXPO_PUBLIC_POWERSYNC_URL ||
@@ -13,17 +14,49 @@ const SYNC_ENDPOINT =
  * sync rules to scope data to the authenticated user.
  */
 export class BackendConnector implements PowerSyncBackendConnector {
-  private token: string | null = null;
+  private sessionToken: string | null = null;
+  private syncToken: string | null = null;
+  private syncTokenExpiresAt = 0;
+  private syncTokenRequest: Promise<string> | null = null;
 
+  /**
+   * The session JWT can't be used on the sync stream — PowerSync rejects
+   * tokens spanning more than 24h (PSYNC_S2104). Exchange it for a
+   * short-lived sync token via the backend, cached until it is about to
+   * expire so reconnects don't hammer the endpoint.
+   */
   async fetchCredentials(): Promise<PowerSyncCredentials | null> {
-    if (!this.token) {
+    if (!this.sessionToken) {
       return null;
     }
 
     return {
       endpoint: SYNC_ENDPOINT,
-      token: this.token,
+      token: await this.getSyncToken(),
     };
+  }
+
+  private getSyncToken(): Promise<string> {
+    if (this.syncToken && this.syncTokenExpiresAt - Date.now() > 60_000) {
+      return Promise.resolve(this.syncToken);
+    }
+
+    if (!this.syncTokenRequest) {
+      const sessionToken = this.sessionToken;
+      this.syncTokenRequest = (async () => {
+        const { data } = await client.post<{ token: string }>(
+          '/api/auth/sync-token',
+          null,
+          { headers: { Authorization: `Bearer ${sessionToken}` } }
+        );
+        this.syncToken = data.token;
+        this.syncTokenExpiresAt = (decodeJwtExp(data.token) ?? 0) * 1000;
+        return data.token;
+      })().finally(() => {
+        this.syncTokenRequest = null;
+      });
+    }
+    return this.syncTokenRequest;
   }
 
   /**
@@ -56,11 +89,15 @@ export class BackendConnector implements PowerSyncBackendConnector {
   }
 
   setToken(token: string | null) {
-    this.token = token;
+    if (token !== this.sessionToken) {
+      this.sessionToken = token;
+      this.syncToken = null;
+      this.syncTokenExpiresAt = 0;
+    }
   }
 
   get currentToken(): string | null {
-    return this.token;
+    return this.sessionToken;
   }
 }
 
