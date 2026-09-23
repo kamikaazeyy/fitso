@@ -133,12 +133,16 @@ jobs:
             # Show final status
             docker compose ps
 
-            # Auto-trigger a preview APK mirror build on the monitoring dashboard
+            # Auto-trigger a preview APK mirror build on the monitoring dashboard.
+            # Non-fatal: the deploy already succeeded by this point — a git
+            # permission issue or a down dashboard must not fail the job.
             cd /home/kamikaazeyy/fitso
-            git fetch origin main
-            git reset --hard origin/main
-            PAYLOAD=$(printf '{"profile":"preview","message":"Auto mirror after main deploy: %s"}' "$GITHUB_SHA")
-            curl -fsS -X POST http://localhost:3000/api/builds \
-              -H 'Content-Type: application/json' \
-              -d "$PAYLOAD" \
-              || echo "WARNING: Failed to trigger APK mirror (is monitoring-dashboard running?)"
+            if git fetch origin main && git reset --hard origin/main; then
+              PAYLOAD=$(printf '{"profile":"preview","message":"Auto mirror after main deploy: %s"}' "$GITHUB_SHA")
+              curl -fsS -X POST http://localhost:3000/api/builds \
+                -H 'Content-Type: application/json' \
+                -d "$PAYLOAD" \
+                || echo "WARNING: Failed to trigger APK mirror (is monitoring-dashboard running?)"
+            else
+              echo "WARNING: git mirror failed — check .git ownership on the server (sudo chown -R $USER:$USER /home/kamikaazeyy/fitso)"
+            fi
