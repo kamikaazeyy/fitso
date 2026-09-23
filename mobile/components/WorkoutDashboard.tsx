@@ -4,9 +4,13 @@ import { useRouter } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { OverloadLineChart, VolumeBarChart } from '@/components/ProgressCharts';
+import { useQuery } from '@powersync/react-native';
+import { CUSTOM_EXERCISES_TABLE, EXERCISE_CACHE_TABLE } from '@/src/db/AppSchema';
 import type { LoadableStatus } from '@/hooks/useLoadableData';
 import type { WorkoutWithSets } from '@/src/hooks/useWorkouts';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { useSettingsStore } from '@/src/store/useSettingsStore';
+import { displayWeight } from '@/src/utils/units';
 import { colors } from '@/constants/theme';
 
 interface WorkoutDashboardProps {
@@ -42,8 +46,27 @@ function formatNumber(n: number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+function parseJsonList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps) {
   const router = useRouter();
+  const unit = useSettingsStore((s) => s.weightUnit);
+
+  // Muscle lookup: wger catalogue rows keyed by id, custom exercises by name.
+  const cacheMuscleRows = useQuery<{ wger_id: number; name: string; muscles: string }>(
+    `SELECT wger_id, name, muscles FROM ${EXERCISE_CACHE_TABLE}`
+  );
+  const customMuscleRows = useQuery<{ name: string; muscles: string }>(
+    `SELECT name, muscles FROM ${CUSTOM_EXERCISES_TABLE}`
+  );
 
   const workouts = data || [];
 
@@ -99,9 +122,9 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
     () =>
       chronological.slice(-12).map((w) => ({
         label: formatDate(w.completedAt),
-        value: workoutVolume(w.sets.filter((s) => s.completed)),
+        value: displayWeight(workoutVolume(w.sets.filter((s) => s.completed)), unit) ?? 0,
       })),
-    [chronological]
+    [chronological, unit]
   );
 
   // Progressive overload: best estimated 1RM per exercise per session,
@@ -134,11 +157,48 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
       series: topExercises.map((name, i) => ({
         name,
         color: palette[i],
-        points: perWorkoutBest.map((best) => best.get(name) ?? null),
+        points: perWorkoutBest.map((best) => {
+          const kg = best.get(name);
+          return kg === undefined ? null : displayWeight(kg, unit);
+        }),
       })),
       labels: recent.map((w) => formatDate(w.completedAt)),
     };
-  }, [chronological]);
+  }, [chronological, unit]);
+
+  // Muscle-group volume over the last 30 days — sets join to the exercise
+  // catalogue by wger id (or name for custom exercises) for muscle attribution.
+  const muscleVolume = useMemo(() => {
+    const muscleByWger = new Map<number, string>();
+    const muscleByName = new Map<string, string>();
+    for (const row of cacheMuscleRows.data) {
+      const primary = parseJsonList(row.muscles)[0];
+      if (!primary) continue;
+      muscleByWger.set(row.wger_id, primary);
+      if (!muscleByName.has(row.name)) muscleByName.set(row.name, primary);
+    }
+    for (const row of customMuscleRows.data) {
+      const primary = parseJsonList(row.muscles)[0];
+      if (primary && !muscleByName.has(row.name)) muscleByName.set(row.name, primary);
+    }
+
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const totals = new Map<string, number>();
+    for (const w of workouts) {
+      if (new Date(w.completedAt).getTime() < cutoff) continue;
+      for (const s of w.sets) {
+        if (!s.completed) continue;
+        const muscle =
+          (s.wgerId != null ? muscleByWger.get(s.wgerId) : undefined) ??
+          muscleByName.get(s.exerciseName) ??
+          'Other';
+        totals.set(muscle, (totals.get(muscle) ?? 0) + s.weightKg * s.reps);
+      }
+    }
+    return [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [cacheMuscleRows.data, customMuscleRows.data, workouts]);
+
+  const muscleMax = muscleVolume.length > 0 ? muscleVolume[0][1] : 1;
 
   return (
     <LoadableContainer
@@ -159,8 +219,10 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
           </View>
           <View className="w-[48%] bg-[#121212] rounded-[20px] p-4 mb-3">
             <Ionicons name="barbell" size={20} color={colors.cyan} />
-            <Text className="text-white text-2xl font-extrabold mt-2">{formatNumber(stats.totalVolume)}</Text>
-            <Text className="text-[#A0A0A0] text-xs font-medium">Total Volume (kg)</Text>
+            <Text className="text-white text-2xl font-extrabold mt-2">
+              {formatNumber(displayWeight(stats.totalVolume, unit) ?? 0)}
+            </Text>
+            <Text className="text-[#A0A0A0] text-xs font-medium">Total Volume ({unit})</Text>
           </View>
           <View className="w-[48%] bg-[#121212] rounded-[20px] p-4 mb-3">
             <Ionicons name="repeat" size={20} color={colors.yellow} />
@@ -186,6 +248,29 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
           <OverloadLineChart series={overload.series} labels={overload.labels} />
         </View>
 
+        {/* Muscle-group distribution — last 30 days */}
+        {muscleVolume.length > 0 && (
+          <View className="bg-[#121212] rounded-[20px] p-4 mb-4">
+            <Text className="text-white text-lg font-bold mb-3">Muscle Volume · 30d</Text>
+            {muscleVolume.map(([muscle, volume]) => (
+              <View key={muscle} className="flex-row items-center mb-2">
+                <Text className="text-[#A0A0A0] text-xs font-semibold w-24" numberOfLines={1}>
+                  {muscle}
+                </Text>
+                <View className="flex-1 h-2 rounded-full bg-[#1C1C1E] overflow-hidden mr-3">
+                  <View
+                    className="h-2 rounded-full bg-[#00E5FF]"
+                    style={{ width: `${Math.max(4, (volume / muscleMax) * 100)}%` }}
+                  />
+                </View>
+                <Text className="text-white text-xs font-bold w-16 text-right">
+                  {formatNumber(displayWeight(volume, unit) ?? 0)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
         {/* Recent Workouts */}
         <View className="bg-[#121212] rounded-[20px] p-4 mb-4">
           <View className="flex-row items-center justify-between mb-3">
@@ -201,16 +286,23 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
             <Text className="text-[#A0A0A0] text-sm">No sessions yet.</Text>
           ) : (
             recentWorkouts.map((w) => (
-              <View key={w.id} className="flex-row items-center justify-between py-3 border-b border-[#1C1C1E] last:border-b-0">
+              <TouchableOpacity
+                key={w.id}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/workout-detail?workoutId=${w.id}`)}
+                className="flex-row items-center justify-between py-3 border-b border-[#1C1C1E] last:border-b-0"
+              >
                 <View className="flex-1">
                   <Text className="text-white font-semibold" numberOfLines={1}>{w.title || 'Workout'}</Text>
                   <Text className="text-[#A0A0A0] text-xs">{formatDate(w.completedAt)} · {formatDuration(w.durationSeconds)}</Text>
                 </View>
                 <View className="items-end">
-                  <Text className="text-white font-bold">{formatNumber(w.volume)} kg</Text>
+                  <Text className="text-white font-bold">
+                    {formatNumber(displayWeight(w.volume, unit) ?? 0)} {unit}
+                  </Text>
                   <Text className="text-[#A0A0A0] text-xs">{w.reps} reps</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </View>
@@ -227,10 +319,14 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
               <View key={pr.exerciseName} className="flex-row items-center justify-between py-3 border-b border-[#1C1C1E] last:border-b-0">
                 <View className="flex-1 pr-2">
                   <Text className="text-white font-semibold" numberOfLines={1}>{pr.exerciseName}</Text>
-                  <Text className="text-[#A0A0A0] text-xs">Best volume {formatNumber(pr.volume)} kg</Text>
+                  <Text className="text-[#A0A0A0] text-xs">
+                    Best volume {formatNumber(displayWeight(pr.volume, unit) ?? 0)} {unit}
+                  </Text>
                 </View>
                 <View className="bg-[#E63946] rounded-xl px-3 py-1.5">
-                  <Text className="text-white font-bold text-sm">{pr.weightKg} kg × {pr.reps}</Text>
+                  <Text className="text-white font-bold text-sm">
+                    {displayWeight(pr.weightKg, unit)} {unit} × {pr.reps}
+                  </Text>
                 </View>
               </View>
             ))

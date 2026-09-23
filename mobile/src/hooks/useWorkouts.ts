@@ -7,8 +7,10 @@ export interface WorkoutSet {
   exerciseName: string;
   wgerId: number | null;
   setNumber: number;
+  setType: string;
   weightKg: number;
   reps: number;
+  rpe: number | null;
   completed: boolean;
   attachment: string | null;
 }
@@ -36,8 +38,10 @@ interface WorkoutSetRow {
   exercise_name: string;
   wger_id: number | null;
   set_number: number;
+  set_type: string | null;
   weight: number | null;
   reps: number | null;
+  rpe: number | null;
   is_completed: number;
   attachment: string | null;
 }
@@ -57,7 +61,7 @@ export function useWorkouts(limit = 50, offset = 0) {
     [limit, offset]
   );
   const setsResult = useQuery<WorkoutSetRow>(
-    `SELECT id, workout_id, exercise_name, wger_id, set_number, weight, reps, is_completed, attachment
+    `SELECT id, workout_id, exercise_name, wger_id, set_number, set_type, weight, reps, rpe, is_completed, attachment
      FROM workout_sets
      ORDER BY order_index ASC, set_number ASC`
   );
@@ -77,8 +81,10 @@ export function useWorkouts(limit = 50, offset = 0) {
         exerciseName: s.exercise_name,
         wgerId: s.wger_id ?? null,
         setNumber: s.set_number,
+        setType: s.set_type ?? 'NORMAL',
         weightKg: s.weight ?? 0,
         reps: s.reps ?? 0,
+        rpe: s.rpe ?? null,
         completed: s.is_completed === 1,
         attachment: s.attachment ?? null,
       });

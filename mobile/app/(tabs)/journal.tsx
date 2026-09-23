@@ -4,15 +4,56 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { colors } from '@/constants/theme';
 import { useRoutines } from '@/src/hooks/useRoutines';
+import { useRoutineMutations } from '@/src/hooks/useRoutineMutations';
+import { useAuth } from '@/context/AuthContext';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 import { LoadableContainer } from '@/components/LoadableContainer';
 
 export default function TrainingScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { data: routines, isLoading, error } = useRoutines();
+  const { deleteRoutine, duplicateRoutine } = useRoutineMutations();
   const isWorkoutActive = useWorkoutSessionStore((s) => s.isActive);
   const activeTitle = useWorkoutSessionStore((s) => s.title);
   const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
+
+  const openRoutineMenu = (routineId: string, routineName: string) => {
+    Alert.alert(routineName, undefined, [
+      {
+        text: 'Edit',
+        onPress: () => router.push(`/routine-editor?routineId=${routineId}`),
+      },
+      {
+        text: 'Duplicate',
+        onPress: async () => {
+          if (!user?.id) return;
+          try {
+            await duplicateRoutine(routineId, user.id);
+          } catch (err) {
+            Alert.alert('Failed', err instanceof Error ? err.message : 'Could not duplicate routine');
+          }
+        },
+      },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Delete routine?', `"${routineName}" will be removed permanently.`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () =>
+                deleteRoutine(routineId).catch((err) =>
+                  Alert.alert('Failed', err instanceof Error ? err.message : 'Could not delete')
+                ),
+            },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const status = isLoading ? 'loading' : error || !routines || routines.length === 0 ? 'empty' : 'data';
 
@@ -90,7 +131,7 @@ export default function TrainingScreen() {
           <Text className="text-white text-lg font-bold">Your Routines</Text>
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => router.push('/create-routine')}
+            onPress={() => router.push('/routine-editor')}
             className="flex-row items-center"
           >
             <Ionicons name="add" size={18} color="#E63946" />
@@ -112,7 +153,19 @@ export default function TrainingScreen() {
                 key={routine.id}
                 className="bg-[#121212] rounded-[20px] p-4 mb-3"
               >
-                <Text className="text-white text-lg font-bold mb-3">{routine.name}</Text>
+                <View className="flex-row items-center justify-between mb-3">
+                  <Text className="text-white text-lg font-bold flex-1" numberOfLines={1}>
+                    {routine.name}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => openRoutineMenu(routine.id, routine.name)}
+                    activeOpacity={0.7}
+                    accessibilityLabel={`routine-options-${routine.name}`}
+                    className="p-1 ml-2"
+                  >
+                    <Ionicons name="ellipsis-horizontal" size={20} color="#A0A0A0" />
+                  </TouchableOpacity>
+                </View>
                 {routine.splits.map((split) => (
                   <View
                     key={split.id}

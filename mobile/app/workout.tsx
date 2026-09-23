@@ -3,7 +3,7 @@ import {
   View,
   Text,
   ScrollView,
-  TextInput,
+
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -13,14 +13,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { AttachmentPicker } from '@/components/AttachmentPicker';
+import { SetRow } from '@/components/SetRow';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { getAttachmentsForEquipment } from '@/constants/attachments';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { WORKOUTS_TABLE, WORKOUT_SETS_TABLE } from '@/src/db/AppSchema';
 import { usePowerSync } from '@powersync/react-native';
-import type { ActiveExercise, ActiveSet, Routine } from '@/src/types/workout';
+import { PlateCalculatorModal } from '@/components/PlateCalculatorModal';
+import { displayWeight, parseWeightInput, type WeightUnit } from '@/src/utils/units';
+import type { ActiveExercise, Routine } from '@/src/types/workout';
 
 function formatTime(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -45,7 +50,7 @@ function parseEquipment(raw: string | null | undefined): string[] {
  * names rather than the `exercises` array, which gets a new identity on every
  * keystroke and would otherwise fire one query per exercise per keypress.
  */
-function usePreviousSetHints(exercises: ActiveExercise[]) {
+function usePreviousSetHints(exercises: ActiveExercise[], unit: WeightUnit) {
   const db = usePowerSync();
   const [hints, setHints] = useState<Record<string, string>>({});
   const exercisesRef = useRef(exercises);
@@ -74,7 +79,8 @@ function usePreviousSetHints(exercises: ActiveExercise[]) {
             for (const row of result.rows._array || []) {
               const key = `${ex.exerciseId}-${row.set_number}`;
               if (!newHints[key]) {
-                newHints[key] = `${row.weight}kg × ${row.reps}`;
+                const shown = row.weight != null ? displayWeight(row.weight, unit) : null;
+                newHints[key] = `${shown ?? '—'}${unit} × ${row.reps ?? '—'}`;
               }
             }
           }
@@ -88,7 +94,7 @@ function usePreviousSetHints(exercises: ActiveExercise[]) {
     if (exerciseKey.length > 0) {
       loadHints();
     }
-  }, [db, exerciseKey]);
+  }, [db, exerciseKey, unit]);
 
   return hints;
 }
@@ -109,7 +115,12 @@ export default function WorkoutScreen() {
   const startWorkout = useWorkoutSessionStore((s) => s.startWorkout);
   const addExerciseToStore = useWorkoutSessionStore((s) => s.addExercise);
   const addSetToStore = useWorkoutSessionStore((s) => s.addSet);
+  const removeSetInStore = useWorkoutSessionStore((s) => s.removeSet);
+  const removeExerciseInStore = useWorkoutSessionStore((s) => s.removeExercise);
+  const reorderExercisesInStore = useWorkoutSessionStore((s) => s.reorderExercises);
+  const setExerciseRestInStore = useWorkoutSessionStore((s) => s.setExerciseRest);
   const updateSetInStore = useWorkoutSessionStore((s) => s.updateSet);
+  const cycleSetTypeInStore = useWorkoutSessionStore((s) => s.cycleSetType);
   const toggleSetCompleteInStore = useWorkoutSessionStore((s) => s.toggleSetComplete);
   const setAttachmentInStore = useWorkoutSessionStore((s) => s.setAttachment);
   const finishWorkout = useWorkoutSessionStore((s) => s.finishWorkout);
@@ -121,16 +132,25 @@ export default function WorkoutScreen() {
   const [pickingExerciseId, setPickingExerciseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const startedRef = useRef(false);
+  const [showPlateCalc, setShowPlateCalc] = useState(false);
+  // Guard keyed on the route params — once this mount has initialised a
+  // session, the effect must not fire again. Without this, `isActive`
+  // flipping to false on finish/discard would re-run the effect and spawn a
+  // phantom workout that MMKV persists as "in progress".
+  const startedForParamsRef = useRef<string | null>(null);
+  const paramsKey = `${routineId ?? ''}|${splitId ?? ''}`;
   const startTime = useWorkoutSessionStore((s) => s.startTime);
+  const weightUnit = useSettingsStore((s) => s.weightUnit);
 
-  const previousHints = usePreviousSetHints(exercises);
+  const previousHints = usePreviousSetHints(exercises, weightUnit);
 
   // Start or resume workout
   useEffect(() => {
-    if (isActive && !startedRef.current) {
+    if (startedForParamsRef.current === paramsKey) return;
+
+    if (isActive) {
       // Session already active (crash recovery or navigation return)
-      startedRef.current = true;
+      startedForParamsRef.current = paramsKey;
       setRunning(true);
       setIsLoading(false);
       return;
@@ -138,26 +158,18 @@ export default function WorkoutScreen() {
 
     if (!splitId || !routineId) {
       // Quick workout — start empty session
-      if (!isActive) {
-        setSplitIdInStore(null);
-        startWorkout();
-      }
-      startedRef.current = true;
+      startedForParamsRef.current = paramsKey;
+      setSplitIdInStore(null);
+      startWorkout();
       setRunning(true);
       setIsLoading(false);
       return;
     }
 
     // Load routine from local SQLite and start with it
+    startedForParamsRef.current = paramsKey;
     const loadRoutine = async () => {
       try {
-        // First check if we already have an active session
-        if (isActive) {
-          startedRef.current = true;
-          setRunning(true);
-          setIsLoading(false);
-          return;
-        }
 
         // Load routine from local SQLite (synced from server)
         const routineResult = await db.execute(
@@ -213,7 +225,6 @@ export default function WorkoutScreen() {
 
         startWorkout(routineForStore);
         setSplitIdInStore(splitId);
-        startedRef.current = true;
         setRunning(true);
         setIsLoading(false);
       } catch (err) {
@@ -222,8 +233,8 @@ export default function WorkoutScreen() {
       }
     };
 
-    loadRoutine();
-  }, [splitId, routineId, isActive, startWorkout, setSplitIdInStore, db]);
+    void loadRoutine();
+  }, [paramsKey, splitId, routineId, isActive, startWorkout, setSplitIdInStore, db]);
 
   // Timer
   useEffect(() => {
@@ -297,6 +308,58 @@ export default function WorkoutScreen() {
 
   const pickingExercise = exercises.find((e) => e.exerciseId === pickingExerciseId);
 
+  const openRestPicker = (exercise: ActiveExercise) => {
+    const presets = [30, 60, 90, 120, 180, 300];
+    Alert.alert(
+      `Rest after ${exercise.name}`,
+      'Auto-starts when you complete a set.',
+      [
+        ...presets.map((seconds) => ({
+          text: seconds >= 60 ? `${seconds / 60} min` : `${seconds}s`,
+          onPress: () => setExerciseRestInStore(exercise.exerciseId, seconds),
+        })),
+        {
+          text: 'Off',
+          onPress: () => setExerciseRestInStore(exercise.exerciseId, 0),
+        },
+        { text: 'Cancel', style: 'cancel' as const },
+      ]
+    );
+  };
+
+  const openExerciseMenu = (exercise: ActiveExercise, index: number) => {
+    Alert.alert(exercise.name, undefined, [
+      ...(index > 0
+        ? [{ text: 'Move up', onPress: () => reorderExercisesInStore(index, index - 1) }]
+        : []),
+      ...(index < exercises.length - 1
+        ? [{ text: 'Move down', onPress: () => reorderExercisesInStore(index, index + 1) }]
+        : []),
+      { text: 'Rest timer…', onPress: () => openRestPicker(exercise) },
+      {
+        text: 'Remove exercise',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Remove exercise?', `Removes ${exercise.name} and its sets.`, [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Remove',
+              style: 'destructive',
+              onPress: () => removeExerciseInStore(exercise.exerciseId),
+            },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const confirmRemoveSet = (exerciseId: string, setId: string) => {
+    Alert.alert('Delete set?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => removeSetInStore(exerciseId, setId) },
+    ]);
+  };
+
   const status = isLoading ? 'loading' : error || exercises.length === 0 ? 'empty' : 'data';
 
   return (
@@ -334,6 +397,14 @@ export default function WorkoutScreen() {
             </View>
           </View>
           <View className="flex-row items-center">
+            <TouchableOpacity
+              onPress={() => setShowPlateCalc(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="Plate calculator"
+              className="mr-3 p-2.5 rounded-full bg-[#1C1C1E]"
+            >
+              <Ionicons name="calculator-outline" size={18} color="#FFFFFF" />
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={handleDiscard}
               activeOpacity={0.7}
@@ -376,8 +447,28 @@ export default function WorkoutScreen() {
                     className="bg-[#121212] rounded-[20px] p-4 mb-3"
                     style={exIndex === 0 ? { marginTop: 4 } : undefined}
                   >
-                    {/* Exercise Name */}
-                    <Text className="text-white text-lg font-bold mb-1">{exercise.name}</Text>
+                    {/* Exercise Name + menu */}
+                    <View className="flex-row items-center justify-between mb-1">
+                      <TouchableOpacity
+                        activeOpacity={0.7}
+                        className="flex-1"
+                        onPress={() =>
+                          router.push(`/exercise-detail?name=${encodeURIComponent(exercise.name)}`)
+                        }
+                      >
+                        <Text className="text-white text-lg font-bold" numberOfLines={1}>
+                          {exercise.name}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => openExerciseMenu(exercise, exIndex)}
+                        activeOpacity={0.7}
+                        accessibilityLabel={`options-${exercise.name}`}
+                        className="p-1 ml-2"
+                      >
+                        <Ionicons name="ellipsis-horizontal" size={20} color="#A0A0A0" />
+                      </TouchableOpacity>
+                    </View>
 
                     {/* Attachment Picker */}
                     {getAttachmentsForEquipment(exercise.equipment || []).length > 1 && (
@@ -398,72 +489,62 @@ export default function WorkoutScreen() {
                     <View className="flex-row items-center mb-3 px-1">
                       <Text className="text-[#A0A0A0] text-xs font-semibold w-10">Set</Text>
                       <Text className="text-[#A0A0A0] text-xs font-semibold flex-1">Previous</Text>
-                      <Text className="text-[#A0A0A0] text-xs font-semibold w-16 text-center">kg</Text>
-                      <Text className="text-[#A0A0A0] text-xs font-semibold w-16 text-center">Reps</Text>
+                      <Text className="text-[#A0A0A0] text-xs font-semibold w-14 text-center">
+                        {weightUnit}
+                      </Text>
+                      <Text className="text-[#A0A0A0] text-xs font-semibold w-14 text-center">Reps</Text>
+                      <Text className="text-[#A0A0A0] text-xs font-semibold w-11 text-center">RPE</Text>
                       <View className="w-10 items-center">
                         <Ionicons name="checkmark" size={14} color="#A0A0A0" />
                       </View>
                     </View>
 
-                    {/* Set Rows */}
+                    {/* Set Rows — swipe left to delete */}
                     {exercise.sets.map((set) => {
                       const hintKey = `${exercise.exerciseId}-${set.setIndex}`;
-                      const previousDisplay =
-                        previousHints[hintKey] ||
-                        (set.previousWeight !== undefined
-                          ? `${set.previousWeight}kg × ${set.previousReps}`
-                          : '');
+                      const hint = previousHints[hintKey];
 
                       return (
-                        <View
+                        <ReanimatedSwipeable
                           key={set.id}
-                          className={`flex-row items-center mb-2 ${set.isCompleted ? 'opacity-40' : ''}`}
+                          friction={2}
+                          rightThreshold={40}
+                          renderRightActions={() => (
+                            <TouchableOpacity
+                              activeOpacity={0.8}
+                              onPress={() => confirmRemoveSet(exercise.exerciseId, set.id)}
+                              className="w-16 items-center justify-center rounded-lg bg-[#E63946] ml-2 mb-2"
+                            >
+                              <Ionicons name="trash-outline" size={18} color="#FFFFFF" />
+                            </TouchableOpacity>
+                          )}
                         >
-                          {/* Set Number */}
-                          <View className="w-10 h-10 rounded-lg bg-[#1C1C1E] items-center justify-center">
-                            <Text className="text-white text-sm font-bold">{set.setIndex}</Text>
-                          </View>
-
-                          {/* Previous */}
-                          <Text className="text-[#A0A0A0] text-sm font-medium flex-1 px-2">
-                            {previousDisplay}
-                          </Text>
-
-                          {/* Weight Input */}
-                          <TextInput
-                            value={set.weight !== null ? String(set.weight) : ''}
-                            onChangeText={(val) => updateSetInStore(exercise.exerciseId, set.id, 'weight', val)}
-                            keyboardType="numeric"
-                            placeholder="—"
-                            placeholderTextColor="#555"
-                            className="w-16 h-10 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold mr-2 px-2"
+                          <SetRow
+                            set={set}
+                            unit={weightUnit}
+                            hint={hint}
+                            onChangeWeight={(val) =>
+                              updateSetInStore(
+                                exercise.exerciseId,
+                                set.id,
+                                'weight',
+                                parseWeightInput(val, weightUnit)
+                              )
+                            }
+                            onChangeReps={(val) =>
+                              updateSetInStore(exercise.exerciseId, set.id, 'reps', val)
+                            }
+                            onChangeRpe={(val) =>
+                              updateSetInStore(exercise.exerciseId, set.id, 'rpe', val)
+                            }
+                            onCycleSetType={() =>
+                              cycleSetTypeInStore(exercise.exerciseId, set.id)
+                            }
+                            onToggleComplete={() =>
+                              toggleSetCompleteInStore(exercise.exerciseId, set.id)
+                            }
                           />
-
-                          {/* Reps Input */}
-                          <TextInput
-                            value={set.reps !== null ? String(set.reps) : ''}
-                            onChangeText={(val) => updateSetInStore(exercise.exerciseId, set.id, 'reps', val)}
-                            keyboardType="numeric"
-                            placeholder="—"
-                            placeholderTextColor="#555"
-                            className="w-16 h-10 bg-[#1C1C1E] rounded-lg text-white text-center text-sm font-semibold mr-2 px-2"
-                          />
-
-                          {/* Checkmark Toggle */}
-                          <TouchableOpacity
-                            onPress={() => toggleSetCompleteInStore(exercise.exerciseId, set.id)}
-                            activeOpacity={0.7}
-                            className={`w-10 h-10 rounded-lg items-center justify-center ${
-                              set.isCompleted ? 'bg-[#4ADE80]' : 'bg-[#1C1C1E]'
-                            }`}
-                          >
-                            <Ionicons
-                              name="checkmark"
-                              size={18}
-                              color={set.isCompleted ? '#000000' : '#555'}
-                            />
-                          </TouchableOpacity>
-                        </View>
+                        </ReanimatedSwipeable>
                       );
                     })}
 
@@ -492,6 +573,11 @@ export default function WorkoutScreen() {
             <Text className="text-[#E63946] font-bold text-base ml-2">Add Exercise</Text>
           </TouchableOpacity>
         </ScrollView>
+
+        <PlateCalculatorModal
+          visible={showPlateCalc}
+          onClose={() => setShowPlateCalc(false)}
+        />
 
         <AttachmentPicker
           visible={!!pickingExerciseId}

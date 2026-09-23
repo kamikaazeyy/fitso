@@ -486,6 +486,7 @@ const TABLE_TO_PRISMA = {
   routines: 'routine',
   splits: 'split',
   routine_exercises: 'routineExercise',
+  custom_exercises: 'customExercise',
 };
 
 const COLUMN_MAP = {
@@ -502,6 +503,7 @@ const COLUMN_MAP = {
   is_completed: 'isCompleted',
   target_sets: 'targetSets',
   target_reps: 'targetReps',
+  target_reps_max: 'targetRepsMax',
   target_weight: 'targetWeight',
   rest_seconds: 'restSeconds',
   started_at: 'startedAt',
@@ -517,11 +519,13 @@ const COLUMN_MAP = {
   rpe: 'rpe',
   attachment: 'attachment',
   equipment: 'equipment',
+  category: 'category',
+  muscles: 'muscles',
 };
 
 // Tables that have a direct userId column — the server overrides this field
 // with the authenticated user's id to prevent cross-user writes.
-const TABLES_WITH_USER_ID = new Set(['workouts', 'routines']);
+const TABLES_WITH_USER_ID = new Set(['workouts', 'routines', 'custom_exercises']);
 
 // Fields that are NOT nullable in the Prisma schema but may arrive as null
 // from SQLite (the user left the field empty). Coerce to the schema default
@@ -571,12 +575,20 @@ async function resolveOwnerId(table, id, opData, tx, cache) {
     cachedLookup(cache, `routine:${routineId}`, async () =>
       userIdOf(await tx.routine.findUnique({ where: { id: routineId }, select: { userId: true } }))
     );
+  const customExerciseOwner = (customExerciseId) =>
+    cachedLookup(cache, `custom_exercise:${customExerciseId}`, async () =>
+      userIdOf(
+        await tx.customExercise.findUnique({ where: { id: customExerciseId }, select: { userId: true } })
+      )
+    );
 
   switch (table) {
     case 'workouts':
       return workoutOwner(id);
     case 'routines':
       return routineOwner(id);
+    case 'custom_exercises':
+      return customExerciseOwner(id);
     case 'workout_sets': {
       const row = await cachedLookup(cache, `workout_set:${id}`, () =>
         tx.workoutSet.findUnique({ where: { id }, select: { workoutId: true } })
@@ -629,7 +641,7 @@ function transformOpData(table, opData) {
     }
 
     // SQLite stores String[] as a JSON string; Prisma expects an array
-    if (key === 'equipment' && typeof transformedValue === 'string') {
+    if ((key === 'equipment' || key === 'muscles') && typeof transformedValue === 'string') {
       try {
         transformedValue = JSON.parse(transformedValue);
       } catch {

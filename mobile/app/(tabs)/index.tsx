@@ -254,8 +254,10 @@ export default function HomeScreen() {
             </View>
             <View className="bg-[#121212] rounded-[20px] px-4">
               {dashboard.recentWorkouts.map((w) => (
-                <View
+                <TouchableOpacity
                   key={w.id}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/workout-detail?workoutId=${w.id}`)}
                   className="flex-row items-center justify-between py-3 border-b border-[#1C1C1E] last:border-b-0"
                 >
                   <View className="flex-1 pr-3">
@@ -267,7 +269,7 @@ export default function HomeScreen() {
                   <Text className="text-[#A0A0A0] text-sm">
                     {formatDuration(w.durationSeconds)}
                   </Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           </View>

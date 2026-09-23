@@ -58,7 +58,10 @@ npx expo run:android                 # build and run on Android device
 
 ### Download (server → client)
 PowerSync's sync protocol handles this automatically. Sync rules in
-`server/powersync/sync-config.yaml` scope all 5 tables by `auth.user_id()`.
+`server/powersync/sync-config.yaml` scope all 6 synced tables by
+`auth.user_id()` (routines, splits, routine_exercises, workouts,
+workout_sets, custom_exercises). A seventh local table, `exercise_cache`,
+is `localOnly` — a client-side wger catalogue cache that never syncs.
 
 ### Upload (client → server)
 The mobile app's `BackendConnector.uploadData()` grabs pending CRUD operations
@@ -96,7 +99,10 @@ and scoped by `auth.user_id()` either directly (routines, workouts) or via JOIN
 - `mobile/src/db/BackendConnector.ts` — connects PowerSync client to sync server, uploads CRUD batches
 - `mobile/src/db/PowerSyncProvider.tsx` — React provider + connect/disconnect helpers
 - `mobile/src/db/database.ts` — PowerSync database singleton
-- `mobile/src/store/useWorkoutSessionStore.ts` — Zustand store for active workouts (userId, splitId, MMKV persistence)
+- `mobile/src/store/useWorkoutSessionStore.ts` — Zustand store for active workouts (userId, splitId, MMKV persistence); `finishWorkout` also writes completed-session data back into the routine template (`src/utils/routineSync.ts` — adds/updates only, never deletes template rows)
+- `mobile/src/store/useSettingsStore.ts` — kg/lb unit + rest/bar defaults (MMKV); weight is canonically stored in kg, converted at display/input via `src/utils/units.ts`
+- `mobile/src/hooks/useRoutineMutations.ts` — routine/split/exercise CRUD (edit, delete, duplicate, multi-split)
+- `mobile/src/services/exerciseCache.ts` — wger catalogue prefetch into `exercise_cache` (7-day staleness) so the picker works offline; custom exercises live in synced `custom_exercises`
 - `mobile/context/AuthContext.tsx` — auth state, sets userId on workout store
 - `mobile/app/workout.tsx` — workout screen (uses store, not local useState)
 - `mobile/src/hooks/useRoutines.ts` — reads routines from local SQLite

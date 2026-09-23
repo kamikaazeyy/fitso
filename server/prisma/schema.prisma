@@ -17,6 +17,7 @@ model User {
   workouts          Workout[]
   nutritionLogs     NutritionLog[]
   routines          Routine[]
+  customExercises   CustomExercise[]
 }
 
 model Workout {
@@ -82,12 +83,25 @@ model RoutineExercise {
   equipment    String[]
   attachment   String?
   orderIndex   Int       @default(0)
-  targetSets   Int?
-  targetReps   Int?
-  targetWeight Decimal?  @db.Decimal(7,2)
+  targetSets    Int?
+  targetReps    Int?
+  targetRepsMax Int?
+  targetWeight  Decimal?  @db.Decimal(7,2)
   restSeconds  Int?
   createdAt    DateTime  @default(now())
   split        Split     @relation(fields: [splitId], references: [id], onDelete: Cascade)
+}
+
+model CustomExercise {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @db.Uuid
+  name      String
+  equipment String[]
+  category  String?
+  muscles   String[]
+  notes     String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model NutritionLog {

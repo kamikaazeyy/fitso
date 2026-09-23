@@ -83,6 +83,7 @@ streams:
         re."orderIndex" as order_index,
         re."targetSets" as target_sets,
         re."targetReps" as target_reps,
+        re."targetRepsMax" as target_reps_max,
         re."targetWeight" as target_weight,
         re."restSeconds" as rest_seconds,
         re."createdAt" as created_at
@@ -90,3 +91,19 @@ streams:
       INNER JOIN "Split" s ON re."splitId" = s.id
       INNER JOIN "Routine" r ON s."routineId" = r.id
       WHERE r."userId" = auth.user_id()
+
+  # User-created exercises — synced per user
+  custom_exercises:
+    auto_subscribe: true
+    query: >
+      SELECT
+        id,
+        "userId" as user_id,
+        name,
+        equipment,
+        category,
+        muscles,
+        notes,
+        "createdAt" as created_at
+      FROM "CustomExercise"
+      WHERE "userId" = auth.user_id()

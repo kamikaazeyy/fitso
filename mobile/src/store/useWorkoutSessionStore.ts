@@ -1,13 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { getPowerSyncDatabase } from '@/src/db/database';
-import { WORKOUT_SETS_TABLE, WORKOUTS_TABLE } from '@/src/db/AppSchema';
+import {
+  ROUTINES_TABLE,
+  ROUTINE_EXERCISES_TABLE,
+  WORKOUT_SETS_TABLE,
+  WORKOUTS_TABLE,
+} from '@/src/db/AppSchema';
 import { heavyFeedback, tapFeedback } from '@/src/services/haptics';
 import {
   cancelRestNotification,
   scheduleRestNotification,
 } from '@/src/services/restTimerNotifications';
 import { createMMKVJSONStorage } from '@/src/store/mmkvStorage';
+import { useSettingsStore } from '@/src/store/useSettingsStore';
 import {
   SET_TYPE_CYCLE,
   type ActiveExercise,
@@ -19,9 +25,15 @@ import {
 } from '@/src/types/workout';
 import { uuid } from '@/src/utils/id';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { computeRoutineUpdate } from '@/src/utils/routineSync';
 
 export const SESSION_STORAGE_KEY = 'fitso.active-workout';
 export const DEFAULT_REST_SECONDS = 90;
+
+/** User-configurable default from Settings; falls back to 90s. */
+function defaultRestSeconds(): number {
+  return useSettingsStore.getState().defaultRestSeconds ?? DEFAULT_REST_SECONDS;
+}
 
 export type SetField = 'weight' | 'reps' | 'rpe' | 'setType';
 
@@ -55,6 +67,7 @@ export interface WorkoutSessionActions {
   setAttachment: (exerciseId: string, attachment: string) => void;
   toggleSetComplete: (exerciseId: string, setId: string) => void;
   reorderExercises: (fromIndex: number, toIndex: number) => void;
+  setExerciseRest: (exerciseId: string, seconds: number) => void;
   startRestTimer: (durationSeconds: number, exerciseName?: string) => void;
   stopRestTimer: () => void;
   finishWorkout: () => Promise<void>;
@@ -152,7 +165,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
               exerciseId: entry.exerciseId,
               name: entry.name,
               orderIndex,
-              restSeconds: entry.restSeconds ?? DEFAULT_REST_SECONDS,
+              restSeconds: entry.restSeconds ?? defaultRestSeconds(),
               sets,
               wgerId: entry.wgerId ?? null,
               equipment: entry.equipment ?? [],
@@ -184,7 +197,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
               exerciseId: exercise.id,
               name: exercise.name,
               orderIndex: exercises.length,
-              restSeconds: exercise.defaultRestSeconds ?? DEFAULT_REST_SECONDS,
+              restSeconds: exercise.defaultRestSeconds ?? defaultRestSeconds(),
               sets: [blankSet(1)],
               wgerId: exercise.wgerId ?? null,
               equipment: exercise.equipment ?? [],
@@ -315,6 +328,15 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         set({ exercises: exercises.map((exercise, orderIndex) => ({ ...exercise, orderIndex })) });
       },
 
+      setExerciseRest: (exerciseId, seconds) => {
+        set({
+          exercises: mapExercise(get().exercises, exerciseId, (exercise) => ({
+            ...exercise,
+            restSeconds: Math.max(0, Math.round(seconds)),
+          })),
+        });
+      },
+
       startRestTimer: (durationSeconds, exerciseName) => {
         if (durationSeconds <= 0) return;
         const targetTimestamp = Date.now() + durationSeconds * 1000;
@@ -386,6 +408,71 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                     exercise.attachment ?? null,
                     createdAt,
                   ]
+                );
+              }
+            }
+
+            // Routine write-back: fold the finished session back into the
+            // template it was seeded from — Hevy-style auto-update. Adds and
+            // updates only; exercises the athlete skipped stay in the routine
+            // (removal happens in the routine editor, never implicitly).
+            if (routineId && splitId) {
+              const templateResult = await tx.execute(
+                `SELECT id FROM ${ROUTINE_EXERCISES_TABLE} WHERE split_id = ?`,
+                [splitId]
+              );
+              const templateIds = new Set<string>(
+                ((templateResult.rows?._array ?? []) as { id: string }[]).map((row) => row.id)
+              );
+              const plan = computeRoutineUpdate(templateIds, exercises);
+
+              for (const update of plan.updates) {
+                await tx.execute(
+                  `UPDATE ${ROUTINE_EXERCISES_TABLE}
+                   SET order_index = ?, attachment = ?, rest_seconds = ?,
+                       target_sets = COALESCE(?, target_sets),
+                       target_reps = COALESCE(?, target_reps),
+                       target_weight = COALESCE(?, target_weight)
+                   WHERE id = ?`,
+                  [
+                    update.orderIndex,
+                    update.attachment,
+                    update.restSeconds,
+                    update.targetSets,
+                    update.targetReps,
+                    update.targetWeight,
+                    update.id,
+                  ]
+                );
+              }
+
+              for (const insert of plan.inserts) {
+                await tx.execute(
+                  `INSERT INTO ${ROUTINE_EXERCISES_TABLE}
+                     (id, split_id, exercise_name, wger_id, equipment, attachment, order_index,
+                      target_sets, target_reps, target_weight, rest_seconds, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [
+                    uuid(),
+                    splitId,
+                    insert.exerciseName,
+                    insert.wgerId,
+                    JSON.stringify(insert.equipment),
+                    insert.attachment,
+                    insert.orderIndex,
+                    insert.targetSets,
+                    insert.targetReps,
+                    insert.targetWeight,
+                    insert.restSeconds,
+                    createdAt,
+                  ]
+                );
+              }
+
+              if (plan.updates.length > 0 || plan.inserts.length > 0) {
+                await tx.execute(
+                  `UPDATE ${ROUTINES_TABLE} SET updated_at = ? WHERE id = ?`,
+                  [createdAt, routineId]
                 );
               }
             }

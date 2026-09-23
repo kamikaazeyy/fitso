@@ -4,12 +4,14 @@ import { useQueryClient } from '@tanstack/react-query';
 import { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
 import { getBackendConnector, setBackendConnectorToken } from './BackendConnector';
 import {
+  CUSTOM_EXERCISES_TABLE,
   ROUTINE_EXERCISES_TABLE,
   ROUTINES_TABLE,
   SPLITS_TABLE,
   WORKOUT_SETS_TABLE,
   WORKOUTS_TABLE,
 } from './AppSchema';
+import { ensureExerciseCache } from '@/src/services/exerciseCache';
 import * as SecureStore from 'expo-secure-store';
 
 export { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
@@ -22,6 +24,7 @@ const SYNCED_TABLES = [
   SPLITS_TABLE,
   ROUTINE_EXERCISES_TABLE,
   WORKOUT_SETS_TABLE,
+  CUSTOM_EXERCISES_TABLE,
 ];
 
 /**
@@ -66,6 +69,9 @@ export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
           },
           { tables: SYNCED_TABLES, throttleMs: 500 }
         );
+        // Prefetch the wger catalogue into the local-only cache so the
+        // exercise picker works offline; single-flight and silent on failure.
+        void ensureExerciseCache(db);
         return connect();
       })
       .catch((error) => {

@@ -109,6 +109,34 @@ describe('session editing', () => {
       [BENCH.exerciseId, 1],
     ]);
   });
+
+  it('removes a set and reindexes the remaining set numbers', () => {
+    store.getState().startWorkout(PUSH_DAY);
+    const secondSetId = store.getState().exercises[0].sets[1].id;
+    store.getState().removeSet(BENCH.exerciseId, secondSetId);
+
+    const sets = store.getState().exercises[0].sets;
+    expect(sets).toHaveLength(2);
+    expect(sets.map((set) => set.setIndex)).toEqual([1, 2]);
+  });
+
+  it('removes an exercise mid-workout and reindexes order', () => {
+    store.getState().startWorkout(PUSH_DAY);
+    store.getState().removeExercise(BENCH.exerciseId);
+
+    const exercises = store.getState().exercises;
+    expect(exercises).toHaveLength(1);
+    expect(exercises[0]).toMatchObject({ exerciseId: SQUAT.exerciseId, orderIndex: 0 });
+  });
+
+  it('updates per-exercise rest seconds and clamps to zero', () => {
+    store.getState().startWorkout(PUSH_DAY);
+    store.getState().setExerciseRest(BENCH.exerciseId, 60);
+    expect(store.getState().exercises[0].restSeconds).toBe(60);
+
+    store.getState().setExerciseRest(BENCH.exerciseId, -5);
+    expect(store.getState().exercises[0].restSeconds).toBe(0);
+  });
 });
 
 describe('toggleSetComplete', () => {

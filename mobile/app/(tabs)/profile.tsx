@@ -1,10 +1,12 @@
 import { ScrollView, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
@@ -81,7 +83,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
-          onPress={() => Alert.alert('Coming soon', 'Units settings are under development.')}
+          onPress={() => router.push('/settings')}
         >
           <View className="flex-row items-center">
             <Ionicons name="options-outline" size={20} color="#E63946" />
