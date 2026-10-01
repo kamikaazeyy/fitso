@@ -4,6 +4,7 @@ import * as SecureStore from 'expo-secure-store';
 import { client, setAuthToken, refreshSession, setOnSessionExpired } from '@/src/api/client';
 import { connectPowerSync, disconnectPowerSync } from '@/src/db/PowerSyncProvider';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
 import { decodeJwtExp } from '@/src/utils/jwt';
 
 export interface User {
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(newToken);
       setUser(newUser);
       useWorkoutSessionStore.getState().setUserId(newUser.id);
+      useCardioSessionStore.getState().setUserId(newUser.id);
     } catch {
       // An unrecoverable session is cleared by the client's 401 handler.
     }
@@ -63,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const parsedUser = JSON.parse(storedUser);
           setUser(parsedUser);
           useWorkoutSessionStore.getState().setUserId(parsedUser.id);
+          useCardioSessionStore.getState().setUserId(parsedUser.id);
         }
         if (storedToken) {
           void maybeRefreshSession(storedToken);
@@ -81,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(null);
       setUser(null);
       useWorkoutSessionStore.getState().setUserId(null);
+      useCardioSessionStore.getState().setUserId(null);
       disconnectPowerSync().catch(() => undefined);
     });
     return () => setOnSessionExpired(null);
@@ -103,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(newUser);
     setAuthToken(newToken);
     useWorkoutSessionStore.getState().setUserId(newUser.id);
+    useCardioSessionStore.getState().setUserId(newUser.id);
     // Connect PowerSync sync engine with the new token
     connectPowerSync(newToken).catch((err) => {
       console.warn('[Auth] Failed to connect PowerSync after login', err);
@@ -145,6 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setAuthToken(null);
     useWorkoutSessionStore.getState().setUserId(null);
+    useCardioSessionStore.getState().setUserId(null);
     await disconnectPowerSync().catch(() => undefined);
   }, []);
 

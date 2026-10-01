@@ -369,13 +369,14 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
           await db.writeTransaction(async (tx) => {
             await tx.execute(
               `INSERT INTO ${WORKOUTS_TABLE}
-                 (id, user_id, routine_id, split_id, title, started_at, finished_at, duration_seconds, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 (id, user_id, routine_id, split_id, workout_type, title, started_at, finished_at, duration_seconds, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 workoutId,
                 userId,
                 routineId,
                 splitId,
+                'STRENGTH',
                 title,
                 startedAt,
                 new Date(finishedAt).toISOString(),
