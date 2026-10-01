@@ -213,11 +213,11 @@ export default function CardioTrackerScreen() {
       : 'fitness';
 
   return (
-    <View className="flex-1 bg-[#0A0A0C]">
+    <View style={{ flex: 1, backgroundColor: '#0A0A0C' }} className="flex-1 bg-[#0A0A0C]">
       <StatusBar barStyle="light-content" />
 
       {/* Top Map HUD */}
-      <View className="flex-1">
+      <View style={{ flex: 1, backgroundColor: '#0A0A0C' }} className="flex-1">
         <ActivityMap
           coordinates={coordinates}
           isLive={true}

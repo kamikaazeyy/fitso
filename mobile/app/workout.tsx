@@ -363,14 +363,14 @@ export default function WorkoutScreen() {
   const status = isLoading ? 'loading' : error || exercises.length === 0 ? 'empty' : 'data';
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1"
+        style={{ flex: 1 }}
         keyboardVerticalOffset={0}
       >
         {/* Sticky Header */}
-        <View className="flex-row items-center justify-between px-4 py-4 bg-black">
+        <View style={{ backgroundColor: '#000000' }} className="flex-row items-center justify-between px-4 py-4">
           <View className="flex-row items-center flex-1">
             <TouchableOpacity
               onPress={exitScreen}

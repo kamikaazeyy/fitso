@@ -3,11 +3,18 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import Mapbox from '@rnmapbox/maps';
 
+// Set Mapbox access token if configured in environment
 const mapboxToken = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
-const hasCustomMapboxToken = Boolean(mapboxToken && !mapboxToken.includes('example') && mapboxToken.startsWith('pk.'));
+const hasCustomMapboxToken = Boolean(
+  mapboxToken && !mapboxToken.includes('example') && mapboxToken.startsWith('pk.')
+);
 
-if (hasCustomMapboxToken && mapboxToken) {
-  Mapbox.setAccessToken(mapboxToken);
+if (mapboxToken) {
+  try {
+    Mapbox.setAccessToken(mapboxToken);
+  } catch {
+    // Ignore token errors
+  }
 }
 
 // Open-source tokenless dark vector style fallback (Carto Dark Matter)

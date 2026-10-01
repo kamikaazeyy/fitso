@@ -84,18 +84,34 @@ export function WorkoutSelectorModal({ visible, onClose }: WorkoutSelectorModalP
                     key={opt.id}
                     activeOpacity={0.75}
                     onPress={() => handleSelect(opt.route)}
-                    className="flex-row items-center bg-[#1C1C1E] rounded-2xl p-4 border border-[#2C2C2E]"
+                    style={{
+                      backgroundColor: '#1C1C1E',
+                      borderRadius: 16,
+                      padding: 16,
+                      borderWidth: 1,
+                      borderColor: '#2C2C2E',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginBottom: 10,
+                    }}
                   >
                     <View
-                      className="w-12 h-12 rounded-xl items-center justify-center mr-3.5"
-                      style={{ backgroundColor: `${opt.color}20` }}
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 12,
+                        backgroundColor: `${opt.color}25`,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: 14,
+                      }}
                     >
                       <Ionicons name={opt.icon as any} size={24} color={opt.color} />
                     </View>
 
-                    <View className="flex-1 pr-2">
-                      <Text className="text-white font-bold text-base">{opt.title}</Text>
-                      <Text className="text-[#8E8E93] text-xs mt-0.5" numberOfLines={1}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 16 }}>{opt.title}</Text>
+                      <Text style={{ color: '#8E8E93', fontSize: 12, marginTop: 2 }} numberOfLines={1}>
                         {opt.subtitle}
                       </Text>
                     </View>
@@ -108,9 +124,16 @@ export function WorkoutSelectorModal({ visible, onClose }: WorkoutSelectorModalP
               <TouchableOpacity
                 activeOpacity={0.8}
                 onPress={onClose}
-                className="mt-4 py-3 items-center justify-center rounded-xl bg-[#2C2C2E]/60"
+                style={{
+                  marginTop: 12,
+                  paddingVertical: 14,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 14,
+                  backgroundColor: '#2C2C2E',
+                }}
               >
-                <Text className="text-[#8E8E93] font-semibold text-sm">Cancel</Text>
+                <Text style={{ color: '#FFFFFF', fontWeight: 'bold', fontSize: 14 }}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </TouchableWithoutFeedback>
