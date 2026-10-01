@@ -112,8 +112,8 @@ export default function CardioTrackerScreen() {
         watcher = await Location.watchPositionAsync(
           {
             accuracy: Location.Accuracy.BestForNavigation,
-            timeInterval: 1000,
-            distanceInterval: 2,
+            timeInterval: 500,
+            distanceInterval: 0,
           },
           (loc) => {
             if (!isMounted) return;

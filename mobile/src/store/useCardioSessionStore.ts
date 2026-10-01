@@ -166,35 +166,46 @@ export const useCardioSessionStore = create<CardioSessionStore>()(
         if (lastPoint) {
           deltaDistance = calculateDistanceMeters(lastPoint, point);
 
-          // Discard unrealistic GPS leaps (e.g. teleporting > 50m in 1s = 180 km/h)
-          const timeDeltaSeconds = Math.max(1, (point.timestamp - lastPoint.timestamp) / 1000);
+          const timeDeltaSeconds = Math.max(0.1, (point.timestamp - lastPoint.timestamp) / 1000);
           const computedSpeedMps = deltaDistance / timeDeltaSeconds;
-          if (computedSpeedMps > 25) {
-            return; // Ignore bad GPS spike
+
+          // Discard unrealistic GPS leaps (teleporting > 108 km/h)
+          if (computedSpeedMps > 30) {
+            return;
           }
 
-          // Compute elevation gain (only count positive climb)
+          // Ignore stationary drift under 30cm
+          if (deltaDistance < 0.3) {
+            return;
+          }
+
+          // Compute elevation gain (only count positive climb > 0.3m)
           if (point.altitude != null && lastPoint.altitude != null) {
             const eleDiff = point.altitude - lastPoint.altitude;
-            if (eleDiff > 0.5) {
+            if (eleDiff > 0.3) {
               deltaElevation = eleDiff;
             }
           }
         }
 
         const newDistance = distanceMeters + deltaDistance;
-        const speed = point.speed != null && point.speed >= 0 ? point.speed : lastPoint ? deltaDistance : 0;
+        const speed =
+          point.speed != null && point.speed >= 0
+            ? point.speed
+            : lastPoint && deltaDistance > 0
+            ? deltaDistance / Math.max(0.1, (point.timestamp - lastPoint.timestamp) / 1000)
+            : 0;
         const newMaxSpeed = Math.max(maxSpeedMps, speed);
 
         // Instantaneous pace (seconds per km)
         let livePace: number | null = null;
-        if (speed > 0.5) {
+        if (speed > 0.4) {
           livePace = Math.min(1800, Math.round(1000 / speed));
         }
 
         // Overall average pace
         const avgPace =
-          newDistance > 50 && elapsedSeconds > 0
+          newDistance > 10 && elapsedSeconds > 0
             ? Math.round((elapsedSeconds / newDistance) * 1000)
             : null;
 
