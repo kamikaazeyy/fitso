@@ -20,6 +20,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<User>;
   signup: (email: string, password: string, name?: string) => Promise<User>;
+  continueAsGuest: (name?: string, email?: string) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -143,6 +144,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [persist]);
 
+  const continueAsGuest = useCallback(
+    async (guestName?: string, guestEmail?: string) => {
+      const guestUser: User = {
+        id: '00000000-0000-4000-8000-000000000001',
+        email: guestEmail?.trim() || 'athlete@fitso.local',
+        name: guestName?.trim() || 'Athlete',
+        dailyCalorieGoal: 2000,
+      };
+      // Synthetic offline JWT token with 10-year expiry
+      const guestToken =
+        'eyJhbGciOiJub25lIn0.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6ImF0aGxldGVAZml0c28ubG9jYWwiLCJuYW1lIjoiQXRobGV0ZSIsImV4cCI6MjAwMDAwMDAwMH0.offline';
+
+      await persist(guestToken, guestUser);
+      return guestUser;
+    },
+    [persist]
+  );
+
   const logout = useCallback(async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(USER_KEY);
@@ -155,8 +174,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ token, user, isLoading, login, signup, logout }),
-    [token, user, isLoading, login, signup, logout]
+    () => ({ token, user, isLoading, login, signup, continueAsGuest, logout }),
+    [token, user, isLoading, login, signup, continueAsGuest, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
