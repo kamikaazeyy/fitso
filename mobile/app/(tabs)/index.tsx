@@ -16,7 +16,7 @@ import { useLoadableData } from '@/hooks/useLoadableData';
 import { useDashboardData } from '@/src/hooks/useDashboard';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
-import { WorkoutSelectorModal } from '@/src/components/WorkoutSelectorModal';
+import { WorkoutSelectorModal, NutritionHubCard } from '@/src/components';
 import { colors } from '@/constants/theme';
 
 const MEAL_DATA = {
@@ -190,86 +190,12 @@ export default function HomeScreen() {
           >
             {meals.status === 'data' && meals.data && (
               <>
-                {/* Option 1: Seamless Charcoal & Dual-Action Hub */}
-                <View className="bg-[#121214] border border-[#222226] rounded-[24px] p-5 mb-3">
-                  {/* Top Header Row */}
-                  <View className="flex-row items-center justify-between mb-4">
-                    <View className="flex-row items-center bg-[#18181B] border border-[#27272A] px-3 py-1 rounded-full">
-                      <View className="w-2 h-2 rounded-full bg-[#10B981] mr-2" />
-                      <Text className="text-[#A1A1AA] text-[11px] font-bold uppercase tracking-wider">
-                        Nutrition Hub
-                      </Text>
-                    </View>
-
-                    <View className="flex-row items-center bg-[#18181B] border border-[#27272A] px-2.5 py-1 rounded-full">
-                      <Ionicons name="calendar-outline" size={12} color="#71717A" />
-                      <Text className="text-[#A1A1AA] text-xs font-semibold ml-1.5">
-                        {meals.data.promo.date}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Dual Action Tiles */}
-                  <View className="gap-y-2.5">
-                    {/* 1. Grocery List Tile */}
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      className="bg-[#18181B] border border-[#27272A] rounded-[18px] p-3.5 flex-row items-center justify-between"
-                      onPress={() =>
-                        Alert.alert(
-                          'Grocery List',
-                          '• Chicken Breast (1.5 kg)\n• Whole Eggs (12 pk)\n• Greek Yogurt (500g)\n• Rolled Oats (1 kg)\n• Jasmine Rice\n• Olive Oil',
-                          [{ text: 'Close' }]
-                        )
-                      }
-                    >
-                      <View className="flex-row items-center flex-1">
-                        <View className="w-10 h-10 rounded-xl bg-[#10B981]/15 border border-[#10B981]/30 items-center justify-center mr-3">
-                          <Ionicons name="cart-outline" size={20} color="#34D399" />
-                        </View>
-                        <View className="flex-1">
-                          <Text className="text-white text-sm font-bold">Grocery List</Text>
-                          <Text className="text-[#71717A] text-xs mt-0.5">14 items to shop</Text>
-                        </View>
-                      </View>
-                      <View className="flex-row items-center">
-                        <View className="bg-[#27272A] px-2.5 py-1 rounded-lg mr-2">
-                          <Text className="text-[#A1A1AA] text-[11px] font-bold">14</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={16} color="#71717A" />
-                      </View>
-                    </TouchableOpacity>
-
-                    {/* 2. Recipes & Meal Prep Tile */}
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      className="bg-[#18181B] border border-[#27272A] rounded-[18px] p-3.5 flex-row items-center justify-between"
-                      onPress={() =>
-                        Alert.alert(
-                          'Recipes & Meal Prep',
-                          '• High-Protein Overnight Oats (420 kcal · 35g P)\n• Grilled Chicken & Avocado Rice (650 kcal · 52g P)\n• Baked Salmon & Sweet Potato (580 kcal · 44g P)',
-                          [{ text: 'Close' }]
-                        )
-                      }
-                    >
-                      <View className="flex-row items-center flex-1">
-                        <View className="w-10 h-10 rounded-xl bg-[#F59E0B]/15 border border-[#F59E0B]/30 items-center justify-center mr-3">
-                          <Ionicons name="restaurant-outline" size={20} color="#FBBF24" />
-                        </View>
-                        <View className="flex-1">
-                          <Text className="text-white text-sm font-bold">Recipes & Prep</Text>
-                          <Text className="text-[#71717A] text-xs mt-0.5">4 custom meals planned</Text>
-                        </View>
-                      </View>
-                      <View className="flex-row items-center">
-                        <View className="bg-[#27272A] px-2.5 py-1 rounded-lg mr-2">
-                          <Text className="text-[#A1A1AA] text-[11px] font-bold">4</Text>
-                        </View>
-                        <Ionicons name="chevron-forward" size={16} color="#71717A" />
-                      </View>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                {/* Modular Nutrition Hub Card */}
+                <NutritionHubCard
+                  dateRange={meals.data.promo.date}
+                  groceryItemCount={14}
+                  recipeCount={4}
+                />
 
                 {/* Meal Item Card */}
                 <View className="bg-[#121212] border border-[#1C1C1E] rounded-[20px] p-4 flex-row items-center justify-between">

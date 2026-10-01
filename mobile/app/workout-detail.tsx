@@ -22,8 +22,7 @@ import { displayWeight, formatWeight, parseWeightInput, type WeightUnit } from '
 import { uuid } from '@/src/utils/id';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { colors } from '@/constants/theme';
-import { ActivityMap } from '@/src/components/ActivityMap';
-import { SplitsTable } from '@/src/components/SplitsTable';
+import { ActivityMap, SplitsTable } from '@/src/components';
 import {
   decodeCoordinates,
   formatPace,

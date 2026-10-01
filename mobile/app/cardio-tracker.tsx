@@ -17,7 +17,7 @@ import {
   stopLocationTracking,
   requestLocationPermissions,
 } from '@/src/services/locationTracker';
-import { ActivityMap } from '@/src/components/ActivityMap';
+import { ActivityMap } from '@/src/components';
 import { formatPace, formatSpeed, formatDistance } from '@/src/utils/geo';
 import type { WorkoutType } from '@/src/types/workout';
 
