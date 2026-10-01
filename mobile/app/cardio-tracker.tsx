@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Location from 'expo-location';
+import { useKeepAwake } from 'expo-keep-awake';
 import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
 import {
   startLocationTracking,
@@ -32,6 +33,7 @@ function formatTimer(totalSeconds: number): string {
 }
 
 export default function CardioTrackerScreen() {
+  useKeepAwake();
   const router = useRouter();
   const params = useLocalSearchParams<{ type?: string }>();
 

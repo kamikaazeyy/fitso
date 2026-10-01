@@ -11,6 +11,10 @@ import {
   encodeCoordinates,
   estimateCardioCalories,
 } from '@/src/utils/geo';
+import { GPSKalmanFilter, PaceSmoother } from '@/src/utils/kalmanFilter';
+
+const kalmanFilter = new GPSKalmanFilter(3.0);
+const paceSmoother = new PaceSmoother(0.35);
 
 export const CARDIO_STORAGE_KEY = 'fitso.active-cardio-session';
 const SPLIT_INTERVAL_METERS = 1000; // 1.00 km split checkpoints
@@ -96,6 +100,8 @@ export const useCardioSessionStore = create<CardioSessionStore>()(
 
       startActivity: (type = 'RUN', customTitle) => {
         tapFeedback();
+        kalmanFilter.reset();
+        paceSmoother.reset();
         const workoutId = uuid();
         const title = customTitle?.trim() || defaultTitleForType(type);
         set({
@@ -112,11 +118,13 @@ export const useCardioSessionStore = create<CardioSessionStore>()(
 
       pauseActivity: () => {
         tapFeedback();
+        paceSmoother.reset();
         set({ isPaused: true, currentSpeedMps: 0, currentPaceSecondsPerKm: null });
       },
 
       resumeActivity: () => {
         tapFeedback();
+        paceSmoother.reset();
         set({ isPaused: false });
       },
 
@@ -159,12 +167,28 @@ export const useCardioSessionStore = create<CardioSessionStore>()(
 
         if (!isActive || isPaused) return;
 
+        // 1. Pass through 2D GPS Kalman Filter (sensor fusion & noise cancellation)
+        const filtered = kalmanFilter.process(
+          point.latitude,
+          point.longitude,
+          5,
+          point.timestamp,
+          point.speed
+        );
+
+        const filteredPoint: CardioLocationPoint = {
+          ...point,
+          latitude: filtered.latitude,
+          longitude: filtered.longitude,
+          speed: filtered.speedMps,
+        };
+
         let deltaDistance = 0;
         let deltaElevation = 0;
         const lastPoint = coordinates[coordinates.length - 1];
 
         if (lastPoint) {
-          deltaDistance = calculateDistanceMeters(lastPoint, point);
+          deltaDistance = calculateDistanceMeters(lastPoint, filteredPoint);
 
           const timeDeltaSeconds = Math.max(0.1, (point.timestamp - lastPoint.timestamp) / 1000);
           const computedSpeedMps = deltaDistance / timeDeltaSeconds;
@@ -174,34 +198,25 @@ export const useCardioSessionStore = create<CardioSessionStore>()(
             return;
           }
 
-          // Ignore stationary drift under 30cm
-          if (deltaDistance < 0.3) {
-            return;
+          // Smart auto-pause threshold: ignore sub-35cm jitter when stationary
+          if (filtered.speedMps < 0.35 && deltaDistance < 0.5) {
+            deltaDistance = 0;
           }
 
-          // Compute elevation gain (only count positive climb > 0.3m)
+          // Compute true elevation climb (only count positive climb > 0.4m)
           if (point.altitude != null && lastPoint.altitude != null) {
             const eleDiff = point.altitude - lastPoint.altitude;
-            if (eleDiff > 0.3) {
+            if (eleDiff > 0.4) {
               deltaElevation = eleDiff;
             }
           }
         }
 
         const newDistance = distanceMeters + deltaDistance;
-        const speed =
-          point.speed != null && point.speed >= 0
-            ? point.speed
-            : lastPoint && deltaDistance > 0
-            ? deltaDistance / Math.max(0.1, (point.timestamp - lastPoint.timestamp) / 1000)
-            : 0;
-        const newMaxSpeed = Math.max(maxSpeedMps, speed);
+        const newMaxSpeed = Math.max(maxSpeedMps, filtered.speedMps);
 
-        // Instantaneous pace (seconds per km)
-        let livePace: number | null = null;
-        if (speed > 0.4) {
-          livePace = Math.min(1800, Math.round(1000 / speed));
-        }
+        // 2. Pass speed through Exponential Moving Average pace smoother
+        const { smoothedSpeedMps, paceSecondsPerKm: livePace } = paceSmoother.update(filtered.speedMps);
 
         // Overall average pace
         const avgPace =
@@ -230,9 +245,9 @@ export const useCardioSessionStore = create<CardioSessionStore>()(
         }
 
         set({
-          coordinates: [...coordinates, point],
+          coordinates: [...coordinates, filteredPoint],
           distanceMeters: newDistance,
-          currentSpeedMps: speed,
+          currentSpeedMps: smoothedSpeedMps,
           maxSpeedMps: newMaxSpeed,
           elevationGainMeters: elevationGainMeters + deltaElevation,
           currentPaceSecondsPerKm: livePace,
