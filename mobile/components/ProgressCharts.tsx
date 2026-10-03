@@ -48,7 +48,7 @@ function Gridlines({ width, ticks }: { width: number; ticks: number[] }) {
   );
 }
 
-function YAxisLabels({ ticks, max }: { ticks: number[]; max: number }) {
+function YAxisLabels({ ticks, min, max }: { ticks: number[]; min: number; max: number }) {
   const plotH = CHART_H - PAD_T - PAD_B;
   return (
     <>
@@ -63,7 +63,7 @@ function YAxisLabels({ ticks, max }: { ticks: number[]; max: number }) {
             fill={LABEL}
             textAnchor="end"
           >
-            {formatCompact((t / (ticks.length - 1)) * max)}
+            {formatCompact(min + (t / (ticks.length - 1)) * (max - min))}
           </SvgText>
         );
       })}
@@ -100,7 +100,7 @@ export function VolumeBarChart({ data }: { data: VolumePoint[] }) {
     <View>
       <Svg width={width} height={CHART_H}>
         <Gridlines width={width} ticks={ticks} />
-        <YAxisLabels ticks={ticks} max={max} />
+        <YAxisLabels ticks={ticks} min={0} max={max} />
         {data.map((d, i) => {
           const h = Math.max(2, (d.value / max) * plotH);
           const x = PAD_L + slot * i + (slot - barW) / 2;
@@ -186,7 +186,7 @@ export function OverloadLineChart({
       )}
       <Svg width={width} height={CHART_H}>
         <Gridlines width={width} ticks={ticks} />
-        <YAxisLabels ticks={ticks} max={max} />
+        <YAxisLabels ticks={ticks} min={min} max={max} />
         {series.map((s) => {
           const pts = s.points
             .map((v, i) => (v === null ? null : `${xFor(i)},${yFor(v)}`))

@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setOnSessionExpired(() => {
       setToken(null);
       setUser(null);
-      useWorkoutSessionStore.getState().setUserId(null);
+      useWorkoutSessionStore.getState().resetSession();
       disconnectPowerSync().catch(() => undefined);
     });
     return () => setOnSessionExpired(null);
@@ -144,7 +144,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
     setAuthToken(null);
-    useWorkoutSessionStore.getState().setUserId(null);
+    // Wipe session state (incl. the PR baseline) and the local synced DB so
+    // the next account on this device starts clean.
+    useWorkoutSessionStore.getState().resetSession();
     await disconnectPowerSync().catch(() => undefined);
   }, []);
 

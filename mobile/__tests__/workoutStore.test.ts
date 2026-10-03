@@ -206,13 +206,63 @@ describe('Brzycki 1RM and PR detection', () => {
     logSet(store, BENCH.exerciseId, 0, 100, 8);
 
     expect(store.getState().exercises[0].sets[0]).toMatchObject({ isPersonalRecord: true });
-    expect(store.getState().personalRecords[BENCH.exerciseId]).toBeCloseTo(124.1379, 4);
 
     logSet(store, BENCH.exerciseId, 1, 90, 8);
     expect(store.getState().exercises[0].sets[1].isPersonalRecord).toBe(false);
 
     logSet(store, BENCH.exerciseId, 2, 110, 8);
     expect(store.getState().exercises[0].sets[2].isPersonalRecord).toBe(true);
-    expect(store.getState().personalRecords[BENCH.exerciseId]).toBeCloseTo(136.5517, 4);
+  });
+
+  it('only flags a set when it beats the hydrated history baseline', () => {
+    // personalRecords is keyed by exercise name and represents saved history.
+    store.setState({ personalRecords: { 'Bench Press': 130 } });
+    store.getState().startWorkout(PUSH_DAY);
+
+    // 100x8 -> e1RM 124.1 < 130 baseline: no PR.
+    logSet(store, BENCH.exerciseId, 0, 100, 8);
+    expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(false);
+
+    // 110x8 -> e1RM 136.6 > 130 baseline: PR.
+    logSet(store, BENCH.exerciseId, 1, 110, 8);
+    expect(store.getState().exercises[0].sets[1].isPersonalRecord).toBe(true);
+  });
+
+  it('never flags warm-up, drop or failure sets as PRs', () => {
+    store.getState().startWorkout(PUSH_DAY);
+    const setId = store.getState().exercises[0].sets[0].id;
+    store.getState().cycleSetType(BENCH.exerciseId, setId); // -> WARMUP
+
+    logSet(store, BENCH.exerciseId, 0, 200, 10);
+    expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(false);
+  });
+
+  it('recomputes the PR flag when a completed set is edited', () => {
+    store.setState({ personalRecords: { 'Bench Press': 110 } });
+    store.getState().startWorkout(PUSH_DAY);
+    const setId = store.getState().exercises[0].sets[0].id;
+    logSet(store, BENCH.exerciseId, 0, 100, 8); // e1RM 124.1 > 110
+    expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(true);
+
+    // Editing reps down drops the e1RM below the baseline — flag must be
+    // recomputed, not stale.
+    store.getState().updateSet(BENCH.exerciseId, setId, 'reps', '1'); // e1RM 100 < 110
+    expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(false);
+
+    // Editing back up restores it.
+    store.getState().updateSet(BENCH.exerciseId, setId, 'reps', '20'); // e1RM 211.8 > 110
+    expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(true);
+  });
+
+  it('does not let a discarded workout pollute the PR baseline', () => {
+    // Baseline only ever comes from saved history (hydratePersonalRecords);
+    // sets logged and then discarded must not raise it.
+    store.getState().startWorkout(PUSH_DAY);
+    logSet(store, BENCH.exerciseId, 0, 150, 8);
+    store.getState().discardWorkout();
+
+    store.getState().startWorkout(PUSH_DAY);
+    logSet(store, BENCH.exerciseId, 0, 150, 8);
+    expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(true);
   });
 });

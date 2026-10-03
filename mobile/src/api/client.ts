@@ -49,7 +49,9 @@ let refreshPromise: Promise<RefreshResponse> | null = null;
 export function refreshSession(): Promise<RefreshResponse> {
   if (!refreshPromise) {
     refreshPromise = (async () => {
-      const { data } = await client.post<RefreshResponse>('/api/auth/refresh');
+      // Empty JSON object: without a body axios sends form-urlencoded, which
+      // the Fastify backend rejects with 415.
+      const { data } = await client.post<RefreshResponse>('/api/auth/refresh', {});
       authToken = data.token;
       await SecureStore.setItemAsync(TOKEN_KEY, data.token);
       await SecureStore.setItemAsync(USER_KEY, JSON.stringify(data.user));

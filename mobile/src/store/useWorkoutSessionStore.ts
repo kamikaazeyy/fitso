@@ -46,7 +46,14 @@ export interface WorkoutSessionState {
   startTime: number | null;
   exercises: ActiveExercise[];
   activeRestTimer: ActiveRestTimer | null;
-  /** Best Brzycki 1RM per exercise, used to flag PRs without hitting the network. */
+  /** Epoch ms when the current pause began — null while the workout runs. */
+  pausedAt: number | null;
+  /** Total ms spent paused across the session (excludes an ongoing pause). */
+  pausedTotalMs: number;
+  /** All-time best Brzycki 1RM per exercise NAME from saved history — the
+   * baseline a set must beat to earn a PR flag. Hydrated from the local
+   * `workout_sets` table at session start/finish so a discarded workout never
+   * leaks into it. Keyed by name because set history only stores names. */
   personalRecords: Record<string, number>;
   /** Authenticated user's id — written into the `user_id` column on save so
    * the sync rules can scope the workout to this user. Set by AuthContext. */
@@ -57,7 +64,13 @@ export interface WorkoutSessionState {
 export interface WorkoutSessionActions {
   setUserId: (userId: string | null) => void;
   setSplitId: (splitId: string | null) => void;
+  setPaused: (paused: boolean) => void;
   startWorkout: (routine?: Routine) => void;
+  /** Reloads the PR baseline from saved set history (fire-and-forget). */
+  hydratePersonalRecords: () => Promise<void>;
+  /** Wipes all session state — used on logout so the next account on this
+   * device doesn't inherit the previous user's PR baseline or live session. */
+  resetSession: () => void;
   addExercise: (exercise: Exercise) => void;
   removeExercise: (exerciseId: string) => void;
   addSet: (exerciseId: string) => void;
@@ -88,6 +101,8 @@ const initialState: WorkoutSessionState = {
   startTime: null,
   exercises: [],
   activeRestTimer: null,
+  pausedAt: null,
+  pausedTotalMs: 0,
   personalRecords: {},
   userId: null,
   isSaving: false,
@@ -124,6 +139,37 @@ function isSetEmpty(set: ActiveSet): boolean {
 }
 
 /**
+ * Recomputes `estimatedOneRepMax` and `isPersonalRecord` for a whole exercise.
+ * A completed NORMAL set earns the PR flag when its e1RM beats every NORMAL
+ * set that came before it — the all-time history baseline plus the earlier
+ * completed sets of this session. Warmup/drop/failure sets can never be PRs,
+ * and un-completing or editing a set flips the flag back off.
+ */
+function computePRFlags(sets: ActiveSet[], historyBaseline: number): ActiveSet[] {
+  let running = historyBaseline;
+  return sets.map((set) => {
+    const e1rm = set.isCompleted ? estimateOneRepMax(set.weight, set.reps) : null;
+    const isPersonalRecord =
+      set.isCompleted && set.setType === 'NORMAL' && e1rm !== null && e1rm > running;
+    if (set.isCompleted && set.setType === 'NORMAL' && e1rm !== null) {
+      running = Math.max(running, e1rm);
+    }
+    if (set.estimatedOneRepMax === e1rm && set.isPersonalRecord === isPersonalRecord) return set;
+    return { ...set, estimatedOneRepMax: e1rm, isPersonalRecord };
+  });
+}
+
+/** Active (non-paused) session time in ms, as of `now`. */
+export function activeElapsedMs(
+  state: Pick<WorkoutSessionState, 'startTime' | 'pausedAt' | 'pausedTotalMs'>,
+  now: number
+): number {
+  if (!state.startTime) return 0;
+  const pausedMs = state.pausedTotalMs + (state.pausedAt !== null ? now - state.pausedAt : 0);
+  return Math.max(0, now - state.startTime - pausedMs);
+}
+
+/**
  * Propagates the values of a just-completed set onto the following empty sets as
  * ghost placeholders, so the athlete can log a matching set with a single tap.
  */
@@ -149,6 +195,60 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
       setUserId: (userId) => set({ userId }),
 
       setSplitId: (splitId) => set({ splitId }),
+
+      setPaused: (paused) => {
+        const { isActive, pausedAt, pausedTotalMs } = get();
+        if (!isActive) return;
+        if (paused && pausedAt === null) {
+          set({ pausedAt: Date.now() });
+        } else if (!paused && pausedAt !== null) {
+          set({ pausedAt: null, pausedTotalMs: pausedTotalMs + (Date.now() - pausedAt) });
+        }
+      },
+
+      hydratePersonalRecords: async () => {
+        const { userId } = get();
+        if (!userId) return;
+        try {
+          const db = getPowerSyncDatabase();
+          const result = await db.execute(
+            `SELECT ws.exercise_name, ws.weight, ws.reps
+             FROM ${WORKOUT_SETS_TABLE} ws
+             JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
+             WHERE w.user_id = ?
+               AND ws.is_completed = 1
+               AND (ws.set_type IS NULL OR ws.set_type = 'NORMAL')`,
+            [userId]
+          );
+          const records: Record<string, number> = {};
+          for (const row of (result.rows?._array ?? []) as {
+            exercise_name: string;
+            weight: number | null;
+            reps: number | null;
+          }[]) {
+            const e1rm = estimateOneRepMax(row.weight, row.reps);
+            if (e1rm !== null && e1rm > (records[row.exercise_name] ?? 0)) {
+              records[row.exercise_name] = e1rm;
+            }
+          }
+          // Re-flag already-completed sets against the fresh baseline —
+          // hydration can resolve after the athlete has logged sets.
+          set({
+            personalRecords: records,
+            exercises: get().exercises.map((exercise) => ({
+              ...exercise,
+              sets: computePRFlags(exercise.sets, records[exercise.name] ?? 0),
+            })),
+          });
+        } catch {
+          // DB not ready (or logged out mid-workout) — keep the old baseline.
+        }
+      },
+
+      resetSession: () => {
+        void cancelRestNotification().catch(() => undefined);
+        set({ ...initialState });
+      },
 
       startWorkout: (routine) => {
         const exercises: ActiveExercise[] = (routine?.exercises ?? [])
@@ -185,6 +285,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
           startTime: Date.now(),
           exercises,
         });
+        void get().hydratePersonalRecords();
       },
 
       addExercise: (exercise) => {
@@ -227,7 +328,10 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         set({
           exercises: mapExercise(get().exercises, exerciseId, (exercise) => ({
             ...exercise,
-            sets: reindex(exercise.sets.filter((entry) => entry.id !== setId)),
+            sets: computePRFlags(
+              reindex(exercise.sets.filter((entry) => entry.id !== setId)),
+              get().personalRecords[exercise.name] ?? 0
+            ),
           })),
         });
       },
@@ -236,18 +340,21 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         set({
           exercises: mapExercise(get().exercises, exerciseId, (exercise) => ({
             ...exercise,
-            sets: exercise.sets.map((entry) => {
-              if (entry.id !== setId) return entry;
-              if (field === 'setType') {
-                return { ...entry, setType: value as SetType };
-              }
-              const numeric =
-                value === null || value === undefined || value === ''
-                  ? null
-                  : Number.parseFloat(String(value));
-              const next = numeric !== null && Number.isNaN(numeric) ? entry[field] : numeric;
-              return { ...entry, [field]: next };
-            }),
+            sets: computePRFlags(
+              exercise.sets.map((entry) => {
+                if (entry.id !== setId) return entry;
+                if (field === 'setType') {
+                  return { ...entry, setType: value as SetType };
+                }
+                const numeric =
+                  value === null || value === undefined || value === ''
+                    ? null
+                    : Number.parseFloat(String(value));
+                const next = numeric !== null && Number.isNaN(numeric) ? entry[field] : numeric;
+                return { ...entry, [field]: next };
+              }),
+              get().personalRecords[exercise.name] ?? 0
+            ),
           })),
         });
       },
@@ -278,30 +385,19 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
 
         const target = exercise.sets[setIndex];
         const isCompleting = !target.isCompleted;
-        const oneRepMax = isCompleting ? estimateOneRepMax(target.weight, target.reps) : null;
-        const previousBest = personalRecords[exerciseId] ?? 0;
-        const isPersonalRecord = oneRepMax !== null && oneRepMax > previousBest;
 
         let sets = exercise.sets.map((entry, index) =>
-          index === setIndex
-            ? {
-                ...entry,
-                isCompleted: isCompleting,
-                estimatedOneRepMax: oneRepMax,
-                isPersonalRecord: isCompleting ? isPersonalRecord : false,
-              }
-            : entry
+          index === setIndex ? { ...entry, isCompleted: isCompleting } : entry
         );
 
         if (isCompleting) {
           sets = propagateGhostValues(sets, setIndex);
         }
 
+        sets = computePRFlags(sets, personalRecords[exercise.name] ?? 0);
+
         set({
           exercises: mapExercise(exercises, exerciseId, (entry) => ({ ...entry, sets })),
-          personalRecords: isPersonalRecord
-            ? { ...personalRecords, [exerciseId]: oneRepMax as number }
-            : personalRecords,
         });
 
         if (isCompleting) {
@@ -360,7 +456,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         const finishedAt = Date.now();
         const createdAt = new Date(finishedAt).toISOString();
         const startedAt = new Date(startTime ?? finishedAt).toISOString();
-        const durationSeconds = Math.max(0, Math.round((finishedAt - (startTime ?? finishedAt)) / 1000));
+        const durationSeconds = Math.round(activeElapsedMs(get(), finishedAt) / 1000);
 
         set({ isSaving: true });
 
@@ -485,11 +581,16 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         await cancelRestNotification().catch(() => undefined);
         heavyFeedback();
         set({ ...initialState, personalRecords: get().personalRecords, userId: get().userId, splitId: get().splitId });
+        // The workout just became history — fold it into the PR baseline.
+        void get().hydratePersonalRecords();
       },
 
       discardWorkout: () => {
         void cancelRestNotification().catch(() => undefined);
         set({ ...initialState, personalRecords: get().personalRecords, userId: get().userId, splitId: get().splitId });
+        // Baseline is history-only, so a discarded session can't pollute it —
+        // this refresh just re-syncs it with the local database.
+        void get().hydratePersonalRecords();
       },
     }),
     {
@@ -504,6 +605,8 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         startTime: state.startTime,
         exercises: state.exercises,
         activeRestTimer: state.activeRestTimer,
+        pausedAt: state.pausedAt,
+        pausedTotalMs: state.pausedTotalMs,
         personalRecords: state.personalRecords,
         userId: state.userId,
       }),

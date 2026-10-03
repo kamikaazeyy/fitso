@@ -9,6 +9,7 @@ import { CUSTOM_EXERCISES_TABLE, EXERCISE_CACHE_TABLE } from '@/src/db/AppSchema
 import type { LoadableStatus } from '@/hooks/useLoadableData';
 import type { WorkoutWithSets } from '@/src/hooks/useWorkouts';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { buildOverloadSeries, workoutReps, workoutVolume } from '@/src/utils/trainingStats';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight } from '@/src/utils/units';
 import { colors } from '@/constants/theme';
@@ -20,16 +21,7 @@ interface WorkoutDashboardProps {
   onRefresh?: () => void;
 }
 
-export function workoutVolume(sets: WorkoutWithSets['sets']): number {
-  return sets.reduce(
-    (sum, s) => (s.completed ? sum + (Number(s.weightKg) || 0) * (Number(s.reps) || 0) : sum),
-    0
-  );
-}
-
-export function workoutReps(sets: WorkoutWithSets['sets']): number {
-  return sets.reduce((sum, s) => (s.completed ? sum + (Number(s.reps) || 0) : sum), 0);
-}
+export { workoutReps, workoutVolume };
 
 function formatDuration(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -76,17 +68,20 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
     const totalReps = workouts.reduce((sum, w) => sum + workoutReps(w.sets), 0);
     const totalDuration = workouts.reduce((sum, w) => sum + (w.durationSeconds || 0), 0);
 
-    const exerciseBestSet: Record<string, { weightKg: number; reps: number; volume: number }> = {};
+    // PR = all-time best estimated 1RM on a completed NORMAL set — the same
+    // definition the in-workout PR badge and workout-detail use.
+    const exerciseBestSet: Record<string, { weightKg: number; reps: number; e1rm: number }> = {};
 
     for (const w of workouts) {
       for (const s of w.sets) {
-        if (!s.completed) continue;
+        if (!s.completed || s.setType !== 'NORMAL') continue;
         const weightKg = Number(s.weightKg) || 0;
         const reps = Number(s.reps) || 0;
-        const volume = weightKg * reps;
+        const e1rm = estimateOneRepMax(weightKg, reps);
+        if (e1rm === null) continue;
         const best = exerciseBestSet[s.exerciseName];
-        if (!best || volume > best.volume) {
-          exerciseBestSet[s.exerciseName] = { weightKg, reps, volume };
+        if (!best || e1rm > best.e1rm) {
+          exerciseBestSet[s.exerciseName] = { weightKg, reps, e1rm };
         }
       }
     }
@@ -96,9 +91,9 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
         exerciseName,
         weightKg: set.weightKg,
         reps: set.reps,
-        volume: set.volume,
+        e1rm: set.e1rm,
       }))
-      .sort((a, b) => b.volume - a.volume);
+      .sort((a, b) => b.e1rm - a.e1rm);
 
     return { totalWorkouts, totalVolume, totalReps, totalDuration, personalRecords };
   }, [workouts]);
@@ -131,37 +126,8 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
   // for the 3 most frequently trained exercises.
   const overload = useMemo(() => {
     const recent = chronological.slice(-14);
-    const perWorkoutBest = recent.map((w) => {
-      const best = new Map<string, number>();
-      for (const s of w.sets) {
-        if (!s.completed) continue;
-        const e1rm = estimateOneRepMax(Number(s.weightKg) || 0, Number(s.reps) || 0);
-        if (e1rm === null) continue;
-        const current = best.get(s.exerciseName);
-        if (current === undefined || e1rm > current) best.set(s.exerciseName, e1rm);
-      }
-      return best;
-    });
-
-    const counts = new Map<string, number>();
-    for (const best of perWorkoutBest) {
-      for (const name of best.keys()) counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-    const topExercises = [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([name]) => name);
-
-    const palette = [colors.cta, colors.cyan, colors.yellow];
     return {
-      series: topExercises.map((name, i) => ({
-        name,
-        color: palette[i],
-        points: perWorkoutBest.map((best) => {
-          const kg = best.get(name);
-          return kg === undefined ? null : displayWeight(kg, unit);
-        }),
-      })),
+      ...buildOverloadSeries(recent, unit),
       labels: recent.map((w) => formatDate(w.completedAt)),
     };
   }, [chronological, unit]);
@@ -320,7 +286,7 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
                 <View className="flex-1 pr-2">
                   <Text className="text-white font-semibold" numberOfLines={1}>{pr.exerciseName}</Text>
                   <Text className="text-[#A0A0A0] text-xs">
-                    Best volume {formatNumber(displayWeight(pr.volume, unit) ?? 0)} {unit}
+                    Est. 1RM {formatNumber(displayWeight(pr.e1rm, unit) ?? 0)} {unit}
                   </Text>
                 </View>
                 <View className="bg-[#E63946] rounded-xl px-3 py-1.5">

@@ -116,6 +116,8 @@ export default function WorkoutDetailScreen() {
 
   const [workout, setWorkout] = useState<WorkoutRow | null>(null);
   const [groups, setGroups] = useState<ExerciseGroup[]>([]);
+  // All-time best e1RM per exercise across OTHER workouts — PR baseline.
+  const [priorBests, setPriorBests] = useState<Map<string, number>>(new Map());
   const [deletedSetIds, setDeletedSetIds] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState('');
   const [editing, setEditing] = useState(false);
@@ -147,10 +149,35 @@ export default function WorkoutDetailScreen() {
           [workoutId]
         );
 
+        // PR baseline: best e1RM of completed NORMAL sets in workouts that
+        // finished before this one started — a set only counts as a PR if it
+        // beat history at the time it was logged.
+        const priorResult = await db.execute(
+          `SELECT ws.exercise_name, ws.weight, ws.reps
+           FROM ${WORKOUT_SETS_TABLE} ws
+           JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
+           WHERE ws.workout_id != ? AND ws.is_completed = 1
+             AND (ws.set_type IS NULL OR ws.set_type = 'NORMAL')
+             AND w.finished_at < ?`,
+          [workoutId, row.started_at]
+        );
+        const bests = new Map<string, number>();
+        for (const prior of (priorResult.rows?._array ?? []) as {
+          exercise_name: string;
+          weight: number | null;
+          reps: number | null;
+        }[]) {
+          const e1rm = estimateOneRepMax(prior.weight, prior.reps);
+          if (e1rm !== null && e1rm > (bests.get(prior.exercise_name) ?? 0)) {
+            bests.set(prior.exercise_name, e1rm);
+          }
+        }
+
         if (!cancelled) {
           setWorkout(row);
           setTitle(row.title);
           setGroups(groupSets((setsResult.rows?._array ?? []) as Record<string, unknown>[], unit));
+          setPriorBests(bests);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load workout');
@@ -165,21 +192,27 @@ export default function WorkoutDetailScreen() {
     };
   }, [workoutId, db, unit]);
 
-  // Session-best e1RM per exercise — PR sets get highlighted.
-  const sessionBests = useMemo(() => {
-    const bests = new Map<string, number>();
+  // A set is a PR when its e1RM beats every completed NORMAL set that came
+  // before it — history (priorBests) plus earlier sets in this workout — the
+  // same definition the in-workout badge uses.
+  const prSetIds = useMemo(() => {
+    const flagged = new Set<string>();
+    const running = new Map<string, number>();
     for (const group of groups) {
       for (const set of group.sets) {
-        if (!set.isCompleted) continue;
+        if (!set.isCompleted || set.setType !== 'NORMAL') continue;
         const e1rm = estimateOneRepMax(
           parseWeightInput(set.weight, unit),
           parseInt(set.reps, 10) || null
         );
-        if (e1rm !== null && e1rm > (bests.get(group.name) ?? 0)) bests.set(group.name, e1rm);
+        if (e1rm === null) continue;
+        const best = Math.max(priorBests.get(group.name) ?? 0, running.get(group.name) ?? 0);
+        if (e1rm > best) flagged.add(set.id);
+        running.set(group.name, Math.max(running.get(group.name) ?? 0, e1rm));
       }
     }
-    return bests;
-  }, [groups, unit]);
+    return flagged;
+  }, [groups, unit, priorBests]);
 
   const totalVolume = useMemo(
     () =>
@@ -425,11 +458,7 @@ export default function WorkoutDetailScreen() {
               {group.sets.map((set) => {
                 // Weight draft is in the display unit — parse back to kg so it
                 // compares correctly against the kg-based session bests.
-                const e1rm = estimateOneRepMax(
-                  parseWeightInput(set.weight, unit),
-                  parseInt(set.reps, 10) || null
-                );
-                const isBest = set.isCompleted && e1rm !== null && e1rm === sessionBests.get(group.name);
+                const isPR = prSetIds.has(set.id);
                 const label = SET_TYPE_LABELS[set.setType];
 
                 return (
@@ -493,7 +522,7 @@ export default function WorkoutDetailScreen() {
                     )}
 
                     <View className="flex-1 flex-row items-center justify-end">
-                      {isBest && (
+                      {isPR && (
                         <View className="px-1.5 rounded bg-[#E63946] mr-2">
                           <Text className="text-[9px] font-extrabold text-white">PR</Text>
                         </View>

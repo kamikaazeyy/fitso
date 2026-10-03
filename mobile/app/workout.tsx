@@ -127,8 +127,9 @@ export default function WorkoutScreen() {
   const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
   const setSplitIdInStore = useWorkoutSessionStore((s) => s.setSplitId);
 
-  const [elapsed, setElapsed] = useState(0);
-  const [running, setRunning] = useState(false);
+  // Re-render tick for the header timer — the value itself derives from the
+  // store so pause time never counts toward the saved duration.
+  const [, setElapsedTick] = useState(0);
   const [pickingExerciseId, setPickingExerciseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +141,11 @@ export default function WorkoutScreen() {
   const startedForParamsRef = useRef<string | null>(null);
   const paramsKey = `${routineId ?? ''}|${splitId ?? ''}`;
   const startTime = useWorkoutSessionStore((s) => s.startTime);
+  const pausedAt = useWorkoutSessionStore((s) => s.pausedAt);
+  const pausedTotalMs = useWorkoutSessionStore((s) => s.pausedTotalMs);
+  const setPaused = useWorkoutSessionStore((s) => s.setPaused);
   const weightUnit = useSettingsStore((s) => s.weightUnit);
+  const isPaused = pausedAt !== null;
 
   const previousHints = usePreviousSetHints(exercises, weightUnit);
 
@@ -151,7 +156,6 @@ export default function WorkoutScreen() {
     if (isActive) {
       // Session already active (crash recovery or navigation return)
       startedForParamsRef.current = paramsKey;
-      setRunning(true);
       setIsLoading(false);
       return;
     }
@@ -161,7 +165,6 @@ export default function WorkoutScreen() {
       startedForParamsRef.current = paramsKey;
       setSplitIdInStore(null);
       startWorkout();
-      setRunning(true);
       setIsLoading(false);
       return;
     }
@@ -225,7 +228,6 @@ export default function WorkoutScreen() {
 
         startWorkout(routineForStore);
         setSplitIdInStore(splitId);
-        setRunning(true);
         setIsLoading(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load routine');
@@ -236,14 +238,19 @@ export default function WorkoutScreen() {
     void loadRoutine();
   }, [paramsKey, splitId, routineId, isActive, startWorkout, setSplitIdInStore, db]);
 
-  // Timer
+  // Timer — ticks once per second while running; the displayed value excludes
+  // paused time, matching what finishWorkout saves as duration_seconds.
   useEffect(() => {
-    if (!running || !startTime) return;
-    const interval = setInterval(() => {
-      setElapsed(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+    if (!startTime || isPaused) return;
+    const interval = setInterval(() => setElapsedTick((tick) => tick + 1), 1000);
     return () => clearInterval(interval);
-  }, [running, startTime]);
+  }, [startTime, isPaused]);
+
+  const elapsed = startTime
+    ? Math.floor(
+        Math.max(0, (isPaused ? pausedAt : Date.now()) - startTime - pausedTotalMs) / 1000
+      )
+    : 0;
 
   // Consume exercise added from picker
   const addExercise = useCallback((pending: PendingExercise) => {
@@ -388,10 +395,11 @@ export default function WorkoutScreen() {
                 <Text className="text-[#E63946] text-xl font-bold mr-3">{formatTime(elapsed)}</Text>
                 <TouchableOpacity
                   activeOpacity={0.85}
-                  onPress={() => setRunning(!running)}
+                  onPress={() => setPaused(!isPaused)}
+                  accessibilityLabel={isPaused ? 'Resume timer' : 'Pause timer'}
                   className="w-8 h-8 rounded-full bg-[#1C1C1E] items-center justify-center mr-2"
                 >
-                  <Ionicons name={running ? 'pause' : 'play'} size={16} color="#E63946" />
+                  <Ionicons name={isPaused ? 'play' : 'pause'} size={16} color="#E63946" />
                 </TouchableOpacity>
               </View>
             </View>
