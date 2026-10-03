@@ -3,7 +3,6 @@ import {
   View,
   Text,
   ScrollView,
-
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
@@ -13,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { SetRow } from '@/components/SetRow';
@@ -25,6 +24,7 @@ import { WORKOUTS_TABLE, WORKOUT_SETS_TABLE } from '@/src/db/AppSchema';
 import { usePowerSync } from '@powersync/react-native';
 import { PlateCalculatorModal } from '@/components/PlateCalculatorModal';
 import { displayWeight, parseWeightInput, type WeightUnit } from '@/src/utils/units';
+import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
 import type { ActiveExercise, Routine } from '@/src/types/workout';
 
 function formatTime(totalSeconds: number): string {
@@ -75,13 +75,12 @@ function usePreviousSetHints(exercises: ActiveExercise[], unit: WeightUnit) {
              LIMIT 10`,
             [ex.name]
           );
-          if (result.rows && result.rows.length > 0) {
-            for (const row of result.rows._array || []) {
-              const key = `${ex.exerciseId}-${row.set_number}`;
-              if (!newHints[key]) {
-                const shown = row.weight != null ? displayWeight(row.weight, unit) : null;
-                newHints[key] = `${shown ?? '—'}${unit} × ${row.reps ?? '—'}`;
-              }
+          const rows = extractRows(result);
+          for (const row of rows) {
+            const key = `${ex.exerciseId}-${row.set_number}`;
+            if (!newHints[key]) {
+              const shown = row.weight != null ? displayWeight(row.weight, unit) : null;
+              newHints[key] = `${shown ?? '—'}${unit} × ${row.reps ?? '—'}`;
             }
           }
         } catch {
@@ -170,26 +169,24 @@ export default function WorkoutScreen() {
     startedForParamsRef.current = paramsKey;
     const loadRoutine = async () => {
       try {
-
         // Load routine from local SQLite (synced from server)
         const routineResult = await db.execute(
           `SELECT * FROM routines WHERE id = ?`,
           [routineId]
         );
-        if (!routineResult.rows || routineResult.rows.length === 0) {
+        const routine = extractFirstRow(routineResult);
+        if (!routine) {
           setError('Routine not found');
           setIsLoading(false);
           return;
         }
-
-        const routine = routineResult.rows._array?.[0] as any;
 
         // Load splits
         const splitsResult = await db.execute(
           `SELECT * FROM splits WHERE routine_id = ? ORDER BY order_index ASC`,
           [routineId]
         );
-        const splits = splitsResult.rows?._array || [];
+        const splits = extractRows(splitsResult);
 
         // Load exercises for the selected split
         const split = splits.find((s: any) => s.id === splitId);
@@ -203,7 +200,7 @@ export default function WorkoutScreen() {
           `SELECT * FROM routine_exercises WHERE split_id = ? ORDER BY order_index ASC`,
           [split.id]
         );
-        const splitExercises = exercisesResult.rows?._array || [];
+        const splitExercises = extractRows(exercisesResult);
 
         // Build a Routine object for the store
         const routineForStore: Routine = {
@@ -505,7 +502,7 @@ export default function WorkoutScreen() {
                       const hint = previousHints[hintKey];
 
                       return (
-                        <ReanimatedSwipeable
+                        <Swipeable
                           key={set.id}
                           friction={2}
                           rightThreshold={40}
@@ -544,7 +541,7 @@ export default function WorkoutScreen() {
                               toggleSetCompleteInStore(exercise.exerciseId, set.id)
                             }
                           />
-                        </ReanimatedSwipeable>
+                        </Swipeable>
                       );
                     })}
 

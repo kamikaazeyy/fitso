@@ -23,6 +23,7 @@ import { uuid } from '@/src/utils/id';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { colors } from '@/constants/theme';
 import { ActivityMap, SplitsTable } from '@/src/components';
+import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
 import {
   decodeCoordinates,
   formatPace,
@@ -154,7 +155,7 @@ export default function WorkoutDetailScreen() {
            FROM ${WORKOUTS_TABLE} WHERE id = ?`,
           [workoutId]
         );
-        const row = workoutResult.rows?._array?.[0] as WorkoutRow | undefined;
+        const row = extractFirstRow<WorkoutRow>(workoutResult);
         if (!row) {
           if (!cancelled) setError('Workout not found');
           return;
@@ -169,7 +170,7 @@ export default function WorkoutDetailScreen() {
         if (!cancelled) {
           setWorkout(row);
           setTitle(row.title);
-          setGroups(groupSets((setsResult.rows?._array ?? []) as Record<string, unknown>[], unit));
+          setGroups(groupSets(extractRows<Record<string, unknown>>(setsResult), unit));
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load workout');
@@ -396,8 +397,8 @@ export default function WorkoutDetailScreen() {
   const status = loading ? 'loading' : error || !workout ? 'empty' : 'data';
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-row items-center justify-between px-4 py-4">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }} className="flex-1 bg-black">
+      <View style={{ backgroundColor: '#000000' }} className="flex-row items-center justify-between px-4 py-4">
         <View className="flex-row items-center flex-1">
           <TouchableOpacity
             onPress={() => router.back()}
@@ -452,6 +453,7 @@ export default function WorkoutDetailScreen() {
       </View>
 
       <ScrollView
+        style={{ flex: 1, backgroundColor: '#000000' }}
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}

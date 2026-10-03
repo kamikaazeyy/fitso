@@ -1,5 +1,6 @@
 import type { PowerSyncDatabase } from '@powersync/react-native';
 import { EXERCISE_CACHE_TABLE } from '@/src/db/AppSchema';
+import { extractFirstRow } from '@/src/db/queryHelper';
 import {
   getExercises,
   getExerciseName,
@@ -71,7 +72,7 @@ async function isCacheStale(db: PowerSyncDatabase): Promise<boolean> {
   const result = await db.execute(
     `SELECT COUNT(*) as count, MAX(fetched_at) as latest FROM ${EXERCISE_CACHE_TABLE}`
   );
-  const row = result.rows?._array?.[0] as { count: number; latest: string | null } | undefined;
+  const row = extractFirstRow<{ count: number; latest: string | null }>(result);
   if (!row || row.count === 0 || !row.latest) return true;
   return Date.now() - new Date(row.latest).getTime() > STALE_AFTER_MS;
 }
@@ -144,6 +145,6 @@ export function ensureExerciseCache(db: PowerSyncDatabase): Promise<void> {
 /** Cache freshness for the picker: 0 rows = still filling / never fetched. */
 export async function exerciseCacheSize(db: PowerSyncDatabase): Promise<number> {
   const result = await db.execute(`SELECT COUNT(*) as count FROM ${EXERCISE_CACHE_TABLE}`);
-  const row = result.rows?._array?.[0] as { count: number } | undefined;
+  const row = extractFirstRow<{ count: number }>(result);
   return row?.count ?? 0;
 }

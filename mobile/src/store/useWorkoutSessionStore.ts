@@ -26,6 +26,7 @@ import {
 import { uuid } from '@/src/utils/id';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
 import { computeRoutineUpdate } from '@/src/utils/routineSync';
+import { extractRows } from '@/src/db/queryHelper';
 
 export const SESSION_STORAGE_KEY = 'fitso.active-workout';
 export const DEFAULT_REST_SECONDS = 90;
@@ -423,7 +424,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                 [splitId]
               );
               const templateIds = new Set<string>(
-                ((templateResult.rows?._array ?? []) as { id: string }[]).map((row) => row.id)
+                extractRows<{ id: string }>(templateResult).map((row) => row.id)
               );
               const plan = computeRoutineUpdate(templateIds, exercises);
 
