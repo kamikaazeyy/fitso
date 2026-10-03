@@ -79,7 +79,6 @@ app.post('/api/auth/signup', async (request, reply) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        dailyCalorieGoal: user.dailyCalorieGoal,
       },
     });
   } catch (error) {
@@ -114,7 +113,6 @@ app.post('/api/auth/login', async (request, reply) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        dailyCalorieGoal: user.dailyCalorieGoal,
       },
     });
   } catch (error) {
@@ -127,7 +125,7 @@ app.post('/api/auth/login', async (request, reply) => {
 app.get('/api/auth/verify', { preHandler: authenticate }, async (request, reply) => {
   const user = await prisma.user.findUnique({
     where: { id: request.userId },
-    select: { id: true, email: true, name: true, dailyCalorieGoal: true },
+    select: { id: true, email: true, name: true },
   });
   if (!user) {
     return reply.code(404).send({ error: 'User not found' });
@@ -214,70 +212,7 @@ app.get('/api/workouts/:id', { preHandler: authenticate }, async (request, reply
   }
 });
 
-// 2. Nutrition Upsert Endpoint
-app.post('/api/nutrition/log', { preHandler: authenticate }, async (request, reply) => {
-  const { date, calories, proteinG, carbsG, fatG } = request.body;
-  const logDate = new Date(date);
-
-  try {
-    const nutrition = await prisma.nutritionLog.upsert({
-      where: {
-        userId_logDate: {
-          userId: request.userId,
-          logDate: logDate,
-        },
-      },
-      update: {
-        calories: { increment: calories || 0 },
-        proteinG: { increment: proteinG || 0 },
-        carbsG: { increment: carbsG || 0 },
-        fatG: { increment: fatG || 0 },
-      },
-      create: {
-        userId: request.userId,
-        logDate: logDate,
-        calories: calories || 0,
-        proteinG: proteinG || 0,
-        carbsG: carbsG || 0,
-        fatG: fatG || 0,
-      },
-    });
-    return reply.send(nutrition);
-  } catch (error) {
-    app.log.error(error);
-    return reply.code(500).send({ error: 'Failed to log nutrition' });
-  }
-});
-
-// 3. Dashboard Aggregator
-app.get('/api/dashboard/today', { preHandler: authenticate }, async (request, reply) => {
-  const dateString = request.query.date || new Date().toISOString().split('T')[0];
-  const queryDateUTC = new Date(dateString);
-
-  try {
-    const nutrition = await prisma.nutritionLog.findUnique({
-      where: {
-        userId_logDate: { userId: request.userId, logDate: queryDateUTC },
-      },
-    });
-
-    const recentWorkouts = await prisma.workout.findMany({
-      where: { userId: request.userId },
-      orderBy: { finishedAt: 'desc' },
-      take: 3,
-    });
-
-    return reply.send({
-      nutrition: nutrition || { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
-      recentWorkouts,
-    });
-  } catch (error) {
-    app.log.error(error);
-    return reply.code(500).send({ error: 'Failed to fetch dashboard' });
-  }
-});
-
-// 4. Routines & Splits
+// 2. Routines & Splits
 
 // List routines for the authenticated user
 app.get('/api/routines', { preHandler: authenticate }, async (request, reply) => {
