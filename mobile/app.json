@@ -71,8 +71,7 @@
             }
           }
         }
-      ],
-      "@rnmapbox/maps"
+      ]
     ],
     "extra": {
       "router": {},
