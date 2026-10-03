@@ -7,38 +7,38 @@ streams:
     auto_subscribe: true
     query: >
       SELECT
-        id,
-        "userId" as user_id,
-        "routineId" as routine_id,
-        "splitId" as split_id,
-        title,
-        "startedAt" as started_at,
-        "finishedAt" as finished_at,
-        "durationSeconds" as duration_seconds,
-        "createdAt" as created_at
-      FROM "Workout"
-      WHERE "userId" = auth.user_id()
+        workouts.id,
+        workouts."userId" as user_id,
+        workouts."routineId" as routine_id,
+        workouts."splitId" as split_id,
+        workouts.title,
+        workouts."startedAt" as started_at,
+        workouts."finishedAt" as finished_at,
+        workouts."durationSeconds" as duration_seconds,
+        workouts."createdAt" as created_at
+      FROM "Workout" AS workouts
+      WHERE workouts."userId" = auth.user_id()
 
   # Workout sets — synced via the parent workout's user
   workout_sets:
     auto_subscribe: true
     query: >
       SELECT
-        ws.id,
-        ws."workoutId" as workout_id,
-        ws."exerciseName" as exercise_name,
-        ws."wgerId" as wger_id,
-        ws."orderIndex" as order_index,
-        ws."setNumber" as set_number,
-        ws."setType" as set_type,
-        ws.weight,
-        ws.reps,
-        ws.rpe,
-        ws."isCompleted" as is_completed,
-        ws.attachment,
-        ws."createdAt" as created_at
-      FROM "WorkoutSet" ws
-      INNER JOIN "Workout" w ON ws."workoutId" = w.id
+        workout_sets.id,
+        workout_sets."workoutId" as workout_id,
+        workout_sets."exerciseName" as exercise_name,
+        workout_sets."wgerId" as wger_id,
+        workout_sets."orderIndex" as order_index,
+        workout_sets."setNumber" as set_number,
+        workout_sets."setType" as set_type,
+        workout_sets.weight,
+        workout_sets.reps,
+        workout_sets.rpe,
+        workout_sets."isCompleted" as is_completed,
+        workout_sets.attachment,
+        workout_sets."createdAt" as created_at
+      FROM "WorkoutSet" AS workout_sets
+      INNER JOIN "Workout" w ON workout_sets."workoutId" = w.id
       WHERE w."userId" = auth.user_id()
 
   # Routines — synced per user
@@ -46,27 +46,27 @@ streams:
     auto_subscribe: true
     query: >
       SELECT
-        id,
-        "userId" as user_id,
-        name,
-        notes,
-        "createdAt" as created_at,
-        "updatedAt" as updated_at
-      FROM "Routine"
-      WHERE "userId" = auth.user_id()
+        routines.id,
+        routines."userId" as user_id,
+        routines.name,
+        routines.notes,
+        routines."createdAt" as created_at,
+        routines."updatedAt" as updated_at
+      FROM "Routine" AS routines
+      WHERE routines."userId" = auth.user_id()
 
   # Splits — synced via the parent routine's user
   splits:
     auto_subscribe: true
     query: >
       SELECT
-        s.id,
-        s."routineId" as routine_id,
-        s.name,
-        s."orderIndex" as order_index,
-        s."createdAt" as created_at
-      FROM "Split" s
-      INNER JOIN "Routine" r ON s."routineId" = r.id
+        splits.id,
+        splits."routineId" as routine_id,
+        splits.name,
+        splits."orderIndex" as order_index,
+        splits."createdAt" as created_at
+      FROM "Split" AS splits
+      INNER JOIN "Routine" r ON splits."routineId" = r.id
       WHERE r."userId" = auth.user_id()
 
   # Routine exercises — synced via split → routine → user
@@ -74,19 +74,19 @@ streams:
     auto_subscribe: true
     query: >
       SELECT
-        re.id,
-        re."splitId" as split_id,
-        re."exerciseName" as exercise_name,
-        re."wgerId" as wger_id,
-        re.equipment,
-        re.attachment,
-        re."orderIndex" as order_index,
-        re."targetSets" as target_sets,
-        re."targetReps" as target_reps,
-        re."targetWeight" as target_weight,
-        re."restSeconds" as rest_seconds,
-        re."createdAt" as created_at
-      FROM "RoutineExercise" re
-      INNER JOIN "Split" s ON re."splitId" = s.id
+        routine_exercises.id,
+        routine_exercises."splitId" as split_id,
+        routine_exercises."exerciseName" as exercise_name,
+        routine_exercises."wgerId" as wger_id,
+        routine_exercises.equipment,
+        routine_exercises.attachment,
+        routine_exercises."orderIndex" as order_index,
+        routine_exercises."targetSets" as target_sets,
+        routine_exercises."targetReps" as target_reps,
+        routine_exercises."targetWeight" as target_weight,
+        routine_exercises."restSeconds" as rest_seconds,
+        routine_exercises."createdAt" as created_at
+      FROM "RoutineExercise" AS routine_exercises
+      INNER JOIN "Split" s ON routine_exercises."splitId" = s.id
       INNER JOIN "Routine" r ON s."routineId" = r.id
       WHERE r."userId" = auth.user_id()

@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -19,6 +18,7 @@ import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { getAttachmentsForEquipment } from '@/constants/attachments';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 import { usePowerSync } from '@/src/db/powersync';
+import { showAlert } from '@/src/utils/alert';
 import type { ActiveExercise, ActiveSet, Routine } from '@/src/types/workout';
 
 function formatTime(totalSeconds: number): string {
@@ -111,6 +111,14 @@ export default function WorkoutScreen() {
   const startedRef = useRef(false);
   const startTime = useWorkoutSessionStore((s) => s.startTime);
 
+  const leaveWorkout = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   const previousHints = usePreviousSetHints(exercises);
 
   // Start or resume workout
@@ -125,15 +133,17 @@ export default function WorkoutScreen() {
 
     if (!splitId || !routineId) {
       // Quick workout — start empty session
-      if (!isActive) {
+      if (!isActive && !startedRef.current) {
         setSplitIdInStore(null);
         startWorkout();
+        startedRef.current = true;
       }
-      startedRef.current = true;
       setRunning(true);
       setIsLoading(false);
       return;
     }
+
+    if (startedRef.current) return;
 
     // Load routine from local SQLite and start with it
     const loadRoutine = async () => {
@@ -241,7 +251,7 @@ export default function WorkoutScreen() {
   const handleFinish = async () => {
     if (!isActive) return;
     if (exercises.length === 0) {
-      Alert.alert('Empty workout', 'Add at least one exercise before finishing.');
+      showAlert('Empty workout', 'Add at least one exercise before finishing.');
       return;
     }
 
@@ -250,14 +260,14 @@ export default function WorkoutScreen() {
       queryClient.invalidateQueries({ queryKey: ['workouts'] });
       queryClient.invalidateQueries({ queryKey: ['routines'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      router.back();
+      leaveWorkout();
     } catch (err) {
-      Alert.alert('Failed to save', err instanceof Error ? err.message : 'Could not save workout');
+      showAlert('Failed to save', err instanceof Error ? err.message : 'Could not save workout');
     }
   };
 
   const handleDiscard = () => {
-    Alert.alert(
+    showAlert(
       'Discard workout?',
       'All progress will be lost.',
       [
@@ -267,7 +277,7 @@ export default function WorkoutScreen() {
           style: 'destructive',
           onPress: () => {
             discardWorkout();
-            router.back();
+            leaveWorkout();
           },
         },
       ]

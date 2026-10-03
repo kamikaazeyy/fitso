@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -14,6 +13,7 @@ import { SegmentedCalorieRing } from '@/components/SegmentedCalorieRing';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { useDashboardData } from '@/src/hooks/useDashboard';
+import { showAlert } from '@/src/utils/alert';
 import { colors } from '@/constants/theme';
 
 const MEAL_DATA = {
@@ -77,7 +77,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.85}
             className="flex-row items-center bg-[#E63946] rounded-full px-4 py-2.5"
-            onPress={() => Alert.alert('Coming soon', 'Explore feature is under development.')}
+            onPress={() => showAlert('Coming soon', 'Explore feature is under development.')}
           >
             <Ionicons name="calendar-outline" size={18} color="#FFFFFF" />
             <Text className="text-white font-semibold text-sm ml-2">Explore</Text>
@@ -85,7 +85,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             className="p-2"
-            onPress={() => Alert.alert('Coming soon', 'Stats dashboard is under development.')}
+            onPress={() => showAlert('Coming soon', 'Stats dashboard is under development.')}
           >
             <Ionicons name="stats-chart" size={24} color="#E63946" />
           </TouchableOpacity>
@@ -148,7 +148,7 @@ export default function HomeScreen() {
           <TouchableOpacity
             activeOpacity={0.7}
             className="p-1"
-            onPress={() => Alert.alert('Coming soon', 'Camera calorie scan is under development.')}
+            onPress={() => showAlert('Coming soon', 'Camera calorie scan is under development.')}
           >
             <Ionicons name="camera-outline" size={20} color="#A0A0A0" />
           </TouchableOpacity>
@@ -161,7 +161,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               activeOpacity={0.7}
               className="flex-row items-center"
-              onPress={() => Alert.alert('Coming soon', 'Meal plan editor is under development.')}
+              onPress={() => showAlert('Coming soon', 'Meal plan editor is under development.')}
             >
               <Text className="text-[#E63946] text-sm font-semibold mr-1.5">Edit plan</Text>
               <Ionicons name="calendar-outline" size={18} color="#E63946" />

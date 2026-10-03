@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { client } from '@/src/api/client';
+import { showAlert } from '@/src/utils/alert';
 
 export default function CreateRoutineScreen() {
   const router = useRouter();
@@ -38,11 +38,11 @@ export default function CreateRoutineScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert('Routine name required', 'Give your routine a name.');
+      showAlert('Routine name required', 'Give your routine a name.');
       return;
     }
     if (exercises.length === 0) {
-      Alert.alert('Add exercises', 'A routine needs at least one exercise.');
+      showAlert('Add exercises', 'A routine needs at least one exercise.');
       return;
     }
 
@@ -66,7 +66,7 @@ export default function CreateRoutineScreen() {
       queryClient.invalidateQueries({ queryKey: ['routines'] });
       router.back();
     } catch (err) {
-      Alert.alert('Failed to save', err instanceof Error ? err.message : 'Could not save routine');
+      showAlert('Failed to save', err instanceof Error ? err.message : 'Could not save routine');
     } finally {
       setSaving(false);
     }

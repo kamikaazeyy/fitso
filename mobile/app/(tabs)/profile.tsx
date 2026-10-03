@@ -1,10 +1,11 @@
-import { ScrollView, View, Text, TouchableOpacity, Alert } from 'react-native';
+import { ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { useAuth } from '@/context/AuthContext';
+import { showAlert } from '@/src/utils/alert';
 
 interface Stats {
   weight: string;
@@ -14,8 +15,6 @@ interface Stats {
 }
 
 interface ProfileData {
-  name: string;
-  email: string;
   avatarIcon: string;
   stats: Stats;
 }
@@ -23,8 +22,6 @@ interface ProfileData {
 type IoniconsName = ComponentProps<typeof Ionicons>['name'];
 
 const DUMMY_PROFILE: ProfileData = {
-  name: 'Alex Fitso',
-  email: 'alex@fitso.app',
   avatarIcon: 'person',
   stats: {
     weight: '78 kg',
@@ -40,7 +37,8 @@ export default function ProfileScreen() {
     [],
     { loadingDelay: 500 }
   );
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
+  const profileName = user?.name ?? user?.email.split('@')[0] ?? '';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
@@ -74,8 +72,8 @@ export default function ProfileScreen() {
                   <Ionicons name={data.avatarIcon as IoniconsName} size={32} color="#FFFFFF" />
                 </View>
                 <View className="ml-4">
-                  <Text className="text-white text-xl font-bold">{data.name}</Text>
-                  <Text className="text-[#A0A0A0] text-sm">{data.email}</Text>
+                  <Text className="text-white text-xl font-bold">{profileName}</Text>
+                  <Text className="text-[#A0A0A0] text-sm">{user?.email ?? ''}</Text>
                 </View>
               </View>
 
@@ -103,7 +101,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
-          onPress={() => Alert.alert('Coming soon', 'Goals settings are under development.')}
+          onPress={() => showAlert('Coming soon', 'Goals settings are under development.')}
         >
           <View className="flex-row items-center">
             <Ionicons name="flag-outline" size={20} color="#E63946" />
@@ -115,7 +113,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
-          onPress={() => Alert.alert('Coming soon', 'Notifications settings are under development.')}
+          onPress={() => showAlert('Coming soon', 'Notifications settings are under development.')}
         >
           <View className="flex-row items-center">
             <Ionicons name="notifications-outline" size={20} color="#E63946" />
@@ -127,7 +125,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
-          onPress={() => Alert.alert('Coming soon', 'Units settings are under development.')}
+          onPress={() => showAlert('Coming soon', 'Units settings are under development.')}
         >
           <View className="flex-row items-center">
             <Ionicons name="options-outline" size={20} color="#E63946" />
@@ -139,7 +137,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
-          onPress={() => Alert.alert('Coming soon', 'Help center is under development.')}
+          onPress={() => showAlert('Coming soon', 'Help center is under development.')}
         >
           <View className="flex-row items-center">
             <Ionicons name="help-circle-outline" size={20} color="#E63946" />
@@ -152,7 +150,7 @@ export default function ProfileScreen() {
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
           onPress={() =>
-            Alert.alert('Log Out', 'Are you sure you want to log out?', [
+            showAlert('Log Out', 'Are you sure you want to log out?', [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Log Out', style: 'destructive', onPress: logout },
             ])
