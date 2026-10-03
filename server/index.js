@@ -380,6 +380,9 @@ const COLUMN_MAP = {
 // with the authenticated user's id to prevent cross-user writes.
 const TABLES_WITH_USER_ID = new Set(['workouts', 'routines']);
 
+// Of the synced tables, only Routine actually has an updatedAt column.
+const TABLES_WITH_UPDATED_AT = new Set(['routines']);
+
 // Fields that are NOT nullable in the Prisma schema but may arrive as null
 // from SQLite (the user left the field empty). Coerce to the schema default
 // so Prisma doesn't reject the upsert.
@@ -452,6 +455,13 @@ app.post('/api/sync/upload', { preHandler: authenticate }, async (request, reply
     const prismaModel = prisma[modelName];
     let opData = transformOpData(table, data || {});
 
+    // COLUMN_MAP maps updated_at globally, but only Routine has an
+    // updatedAt column — drop it for the other models or Prisma rejects
+    // the whole write with `Unknown argument 'updatedAt'`.
+    if (!TABLES_WITH_UPDATED_AT.has(table)) {
+      delete opData.updatedAt;
+    }
+
     // Security: override userId with the authenticated user's id so a
     // compromised client can't write data to another user's account.
     if (TABLES_WITH_USER_ID.has(table)) {
@@ -467,12 +477,12 @@ app.post('/api/sync/upload', { preHandler: authenticate }, async (request, reply
           update: opData,
         });
       } else if (opType === 'PATCH') {
-        // Use upsert so a PATCH on a not-yet-inserted row doesn't throw P2025.
-        // This can happen if operations are reordered or retried.
-        await prismaModel.upsert({
+        // A PATCH op carries only the fields that changed, so it can't be
+        // upserted (a create needs every non-nullable column). Update in
+        // place; a missing row falls through to the P2025 handling below.
+        await prismaModel.update({
           where: { id },
-          create: { ...opData, id },
-          update: opData,
+          data: opData,
         });
       } else if (opType === 'DELETE') {
         try {

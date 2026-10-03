@@ -57,12 +57,14 @@ export function WorkoutCharts({ data, status, error }: WorkoutChartsProps) {
 
     const workoutDays = new Set<number>();
     for (const w of workouts) {
-      const volume = workoutVolume(w.sets);
+      // Only completed sets count toward stats — consistent across tiles,
+      // the weekly chart, and the top-exercise breakdown.
+      const completedSets = w.sets.filter((s) => s.completed);
+      const volume = workoutVolume(completedSets);
       const dayStart = startOfLocalDay(new Date(w.completedAt));
       workoutDays.add(dayStart);
 
-      for (const s of w.sets) {
-        if (!s.completed) continue;
+      for (const s of completedSets) {
         const v = (Number(s.weightKg) || 0) * (Number(s.reps) || 0);
         exerciseVolume.set(s.exerciseName, (exerciseVolume.get(s.exerciseName) ?? 0) + v);
       }
@@ -70,7 +72,7 @@ export function WorkoutCharts({ data, status, error }: WorkoutChartsProps) {
       const i = dayIndex.get(dayStart);
       if (i !== undefined) {
         weekWorkouts += 1;
-        weekReps += workoutReps(w.sets);
+        weekReps += workoutReps(completedSets);
         weekSeconds += w.durationSeconds || 0;
         days[i].volume += volume;
       }
