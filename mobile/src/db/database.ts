@@ -1,4 +1,4 @@
-import { AbstractPowerSyncDatabase, PowerSyncDatabase } from '@powersync/react-native';
+import { AbstractPowerSyncDatabase, PowerSyncDatabase } from './powersync';
 import { AppSchema } from './AppSchema';
 
 export const DATABASE_FILENAME = 'fitso.sqlite';

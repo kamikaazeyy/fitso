@@ -2,6 +2,7 @@ node_modules
 .expo
 dist
 dist-android
+public/@powersync
 *.log
 .DS_Store
 .env

@@ -24,6 +24,7 @@ export async function scheduleRestNotification(
   exerciseName?: string
 ): Promise<string | null> {
   await cancelRestNotification();
+  if (Platform.OS === 'web') return null;
   await ensureChannel();
 
   const identifier = await Notifications.scheduleNotificationAsync({
@@ -48,6 +49,7 @@ export async function cancelRestNotification(): Promise<void> {
   if (!scheduledIdentifier) return;
   const identifier = scheduledIdentifier;
   scheduledIdentifier = null;
+  if (Platform.OS === 'web') return;
   await Notifications.cancelScheduledNotificationAsync(identifier);
 }
 

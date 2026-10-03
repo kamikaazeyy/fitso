@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import type { PowerSyncBackendConnector, PowerSyncCredentials } from '@powersync/react-native';
+import type { PowerSyncBackendConnector, PowerSyncCredentials } from './powersync';
 import { client } from '@/src/api/client';
 
 const SYNC_ENDPOINT =

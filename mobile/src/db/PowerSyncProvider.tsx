@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo } from 'react';
-import { PowerSyncContext } from '@powersync/react-native';
+import { PowerSyncContext } from './powersync';
 import { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
 import { getBackendConnector, setBackendConnectorToken } from './BackendConnector';
-import * as SecureStore from 'expo-secure-store';
+import { getItem } from '@/src/storage/secureStorage';
 
 export { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
 
@@ -21,7 +21,7 @@ export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
     // Connect to the sync server using the stored JWT
     const connect = async () => {
       try {
-        const token = await SecureStore.getItemAsync(TOKEN_KEY);
+        const token = await getItem(TOKEN_KEY);
         if (token) {
           setBackendConnectorToken(token);
           const connector = getBackendConnector();

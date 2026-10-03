@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { usePowerSync } from '@powersync/react-native';
+import { usePowerSync } from '@/src/db/powersync';
 
 export interface WorkoutSet {
   id: string;

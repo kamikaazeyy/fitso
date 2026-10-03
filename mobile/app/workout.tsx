@@ -18,7 +18,7 @@ import { AttachmentPicker } from '@/components/AttachmentPicker';
 import { useWorkout, type PendingExercise } from '@/context/WorkoutContext';
 import { getAttachmentsForEquipment } from '@/constants/attachments';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
-import { usePowerSync } from '@powersync/react-native';
+import { usePowerSync } from '@/src/db/powersync';
 import type { ActiveExercise, ActiveSet, Routine } from '@/src/types/workout';
 
 function formatTime(totalSeconds: number): string {

@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import * as SecureStore from 'expo-secure-store';
 import { client, setAuthToken } from '@/src/api/client';
 import { connectPowerSync, disconnectPowerSync } from '@/src/db/PowerSyncProvider';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { deleteItem, getItem, setItem } from '@/src/storage/secureStorage';
 
 export interface User {
   id: string;
@@ -33,8 +33,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const load = async () => {
       try {
-        const storedToken = await SecureStore.getItemAsync(TOKEN_KEY);
-        const storedUser = await SecureStore.getItemAsync(USER_KEY);
+        const storedToken = await getItem(TOKEN_KEY);
+        const storedUser = await getItem(USER_KEY);
         if (storedToken) {
           setToken(storedToken);
           setAuthToken(storedToken);
@@ -52,8 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const persist = useCallback(async (newToken: string, newUser: User) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, newToken);
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(newUser));
+    await setItem(TOKEN_KEY, newToken);
+    await setItem(USER_KEY, JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);
     setAuthToken(newToken);
@@ -94,8 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [persist]);
 
   const logout = useCallback(async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(USER_KEY);
+    await deleteItem(TOKEN_KEY);
+    await deleteItem(USER_KEY);
     setToken(null);
     setUser(null);
     setAuthToken(null);

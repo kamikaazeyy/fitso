@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { Platform } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import { deleteItem } from '@/src/storage/secureStorage';
 
 const fallbackBaseURL =
   Platform.OS === 'android'
@@ -30,8 +30,8 @@ client.interceptors.response.use(
     if (error?.response?.status === 401 && authToken) {
       authToken = null;
       try {
-        await SecureStore.deleteItemAsync('authToken');
-        await SecureStore.deleteItemAsync('authUser');
+        await deleteItem('authToken');
+        await deleteItem('authUser');
       } catch {
         // ignore storage errors
       }
