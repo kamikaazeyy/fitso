@@ -6,6 +6,7 @@ import {
   SPLITS_TABLE,
 } from '@/src/db/AppSchema';
 import { uuid } from '@/src/utils/id';
+import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
 
 export interface RoutineDraftExercise {
   id: string;
@@ -73,8 +74,9 @@ export function useRoutineMutations() {
           `SELECT id FROM ${SPLITS_TABLE} WHERE routine_id = ?`,
           [draft.id]
         );
+        const existingSplitList = extractRows<SplitRow>(existingSplits);
         const draftSplitIds = new Set(draft.splits.map((split) => split.id));
-        for (const row of (existingSplits.rows?._array ?? []) as SplitRow[]) {
+        for (const row of existingSplitList) {
           if (!draftSplitIds.has(row.id)) {
             await tx.execute(
               `DELETE FROM ${ROUTINE_EXERCISES_TABLE} WHERE split_id = ?`,
@@ -85,7 +87,7 @@ export function useRoutineMutations() {
         }
 
         const existingSplitIds = new Set(
-          ((existingSplits.rows?._array ?? []) as SplitRow[]).map((row) => row.id)
+          existingSplitList.map((row) => row.id)
         );
         for (const [index, split] of draft.splits.entries()) {
           if (existingSplitIds.has(split.id)) {
@@ -108,7 +110,7 @@ export function useRoutineMutations() {
             `SELECT id, split_id FROM ${ROUTINE_EXERCISES_TABLE} WHERE split_id = ?`,
             [split.id]
           );
-          const existingRows = (existing.rows?._array ?? []) as RoutineExerciseIdRow[];
+          const existingRows = extractRows<RoutineExerciseIdRow>(existing);
           const existingIds = new Set(existingRows.map((row) => row.id));
           const draftIds = new Set(split.exercises.map((ex) => ex.id));
 
@@ -167,7 +169,7 @@ export function useRoutineMutations() {
           `SELECT id FROM ${SPLITS_TABLE} WHERE routine_id = ?`,
           [routineId]
         );
-        for (const row of (splits.rows?._array ?? []) as SplitRow[]) {
+        for (const row of extractRows<SplitRow>(splits)) {
           await tx.execute(
             `DELETE FROM ${ROUTINE_EXERCISES_TABLE} WHERE split_id = ?`,
             [row.id]
@@ -188,20 +190,18 @@ export function useRoutineMutations() {
         `SELECT name, notes FROM ${ROUTINES_TABLE} WHERE id = ?`,
         [routineId]
       );
-      const source = routineResult.rows?._array?.[0] as
-        | { name: string; notes: string | null }
-        | undefined;
+      const source = extractFirstRow<{ name: string; notes: string | null }>(routineResult);
       if (!source) throw new Error('Routine not found');
 
       const splitsResult = await db.execute(
         `SELECT id, name, order_index FROM ${SPLITS_TABLE} WHERE routine_id = ? ORDER BY order_index ASC`,
         [routineId]
       );
-      const sourceSplits = (splitsResult.rows?._array ?? []) as {
+      const sourceSplits = extractRows<{
         id: string;
         name: string;
         order_index: number;
-      }[];
+      }>(splitsResult);
 
       const exercisesResult = await db.execute(
         `SELECT re.* FROM ${ROUTINE_EXERCISES_TABLE} re
@@ -210,7 +210,7 @@ export function useRoutineMutations() {
          ORDER BY re.order_index ASC`,
         [routineId]
       );
-      const sourceExercises = (exercisesResult.rows?._array ?? []) as Record<string, unknown>[];
+      const sourceExercises = extractRows<Record<string, unknown>>(exercisesResult);
 
       await db.writeTransaction(async (tx) => {
         const newRoutineId = uuid();

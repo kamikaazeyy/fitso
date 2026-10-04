@@ -29,6 +29,7 @@ import { getAttachmentsForEquipment } from '@/constants/attachments';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight, parseWeightInput } from '@/src/utils/units';
 import { uuid } from '@/src/utils/id';
+import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
 
 function newSplit(index: number): RoutineDraftSplit {
   return { id: uuid(), name: `Split ${index + 1}`, exercises: [] };
@@ -106,9 +107,7 @@ export default function RoutineEditorScreen() {
           `SELECT name, notes FROM ${ROUTINES_TABLE} WHERE id = ?`,
           [routineId]
         );
-        const routine = routineResult.rows?._array?.[0] as
-          | { name: string; notes: string | null }
-          | undefined;
+        const routine = extractFirstRow<{ name: string; notes: string | null }>(routineResult);
         if (!routine) {
           if (!cancelled) Alert.alert('Not found', 'This routine no longer exists.');
           return;
@@ -118,7 +117,7 @@ export default function RoutineEditorScreen() {
           `SELECT id, name FROM ${SPLITS_TABLE} WHERE routine_id = ? ORDER BY order_index ASC`,
           [routineId]
         );
-        const splitRows = (splitsResult.rows?._array ?? []) as { id: string; name: string }[];
+        const splitRows = extractRows<{ id: string; name: string }>(splitsResult);
 
         const loadedSplits: RoutineDraftSplit[] = [];
         for (const split of splitRows) {
@@ -129,7 +128,7 @@ export default function RoutineEditorScreen() {
           loadedSplits.push({
             id: split.id,
             name: split.name,
-            exercises: ((exResult.rows?._array ?? []) as Record<string, unknown>[]).map((row) => ({
+            exercises: extractRows<Record<string, unknown>>(exResult).map((row) => ({
               id: row.id as string,
               exerciseName: row.exercise_name as string,
               wgerId: (row.wger_id as number | null) ?? null,

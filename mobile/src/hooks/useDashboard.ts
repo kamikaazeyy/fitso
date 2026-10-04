@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { usePowerSync } from '@powersync/react-native';
 import { getLocalDateString } from '@/src/utils/date';
+import { extractRows } from '@/src/db/queryHelper';
 
 export interface Nutrition {
   calories: number;
@@ -36,7 +37,8 @@ export function useDashboardData() {
          ORDER BY finished_at DESC
          LIMIT 5`
       );
-      const recentWorkouts: Workout[] = (workoutsResult.rows?._array || []).map((w: any) => ({
+      const rows = extractRows(workoutsResult);
+      const recentWorkouts: Workout[] = rows.map((w: any) => ({
         id: w.id,
         title: w.title ?? 'Workout',
         durationSeconds: w.duration_seconds ?? 0,

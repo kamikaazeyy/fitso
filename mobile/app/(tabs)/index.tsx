@@ -15,6 +15,8 @@ import { LoadableContainer } from '@/components/LoadableContainer';
 import { useLoadableData } from '@/hooks/useLoadableData';
 import { useDashboardData } from '@/src/hooks/useDashboard';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
+import { WorkoutSelectorModal, NutritionHubCard } from '@/src/components';
 import { colors } from '@/constants/theme';
 
 const MEAL_DATA = {
@@ -22,7 +24,6 @@ const MEAL_DATA = {
     title: "It's time to customize your",
     subtitle: 'Grocery List & Recipes',
     date: 'Sep 16 - Sep 20',
-    emojis: ['🥦', '🍎', '🌽'],
   },
   item: {
     duration: '10 min',
@@ -55,7 +56,9 @@ function MacroIconBars({ color }: { color: string }) {
 export default function HomeScreen() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showSelectorModal, setShowSelectorModal] = useState(false);
   const isWorkoutActive = useWorkoutSessionStore((s) => s.isActive);
+  const isCardioActive = useCardioSessionStore((s) => s.isActive);
 
   const { data: dashboard, isLoading: isLoadingNutrition, error: nutritionError } = useDashboardData();
   const meals = useLoadableData(fetchHomeMeals, []);
@@ -187,53 +190,30 @@ export default function HomeScreen() {
           >
             {meals.status === 'data' && meals.data && (
               <>
-                {/* Promo Card */}
-                <View
-                  className="rounded-[24px] p-5 mb-3"
-                  style={{ backgroundColor: '#6EE7B7' }}
-                >
-                  <View className="flex-row items-start justify-between">
-                    <View className="flex-1 pr-4">
-                      <Text className="text-black text-lg font-bold leading-6">
-                        {meals.data.promo.title}
-                      </Text>
-                      <View className="flex-row items-center mt-1">
-                        <Text className="text-black text-lg font-bold mr-1">
-                          {meals.data.promo.subtitle}
-                        </Text>
-                        <Ionicons name="chevron-forward" size={18} color="#000000" />
-                      </View>
-                      <View className="flex-row items-center mt-3">
-                        <Ionicons name="calendar-outline" size={14} color="#000000" />
-                        <Text className="text-black text-sm font-medium ml-2">
-                          {meals.data.promo.date}
-                        </Text>
-                      </View>
-                    </View>
-                    <View className="flex-row flex-wrap justify-end" style={{ width: 90 }}>
-                      {meals.data.promo.emojis.map((emoji, idx) => (
-                        <View
-                          key={idx}
-                          className="w-11 h-11 rounded-full bg-white/40 items-center justify-center m-1"
-                        >
-                          <Text className="text-2xl">{emoji}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </View>
+                {/* Modular Nutrition Hub Card */}
+                <NutritionHubCard
+                  dateRange={meals.data.promo.date}
+                  groceryItemCount={14}
+                  recipeCount={4}
+                />
 
                 {/* Meal Item Card */}
-                <View className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between">
+                <View className="bg-[#121212] border border-[#1C1C1E] rounded-[20px] p-4 flex-row items-center justify-between">
                   <View className="flex-row items-center">
-                    <View className="w-9 h-9 rounded-full bg-[#1C1C1E] items-center justify-center mr-3">
-                      <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                    <View className="w-9 h-9 rounded-full bg-[#163828] border border-[#34D399]/30 items-center justify-center mr-3">
+                      <Ionicons name="checkmark" size={18} color="#34D399" />
                     </View>
-                    <Text className="text-white text-sm font-semibold">
-                      {meals.data.item.duration} · {meals.data.item.calories} kcal
-                    </Text>
+                    <View>
+                      <Text className="text-white text-sm font-semibold">
+                        {meals.data.item.duration} · {meals.data.item.calories} kcal
+                      </Text>
+                      <Text className="text-[#8E8E93] text-xs mt-0.5">Prep time & calories</Text>
+                    </View>
                   </View>
-                  <View className="w-20 h-12 rounded-xl bg-[#2C2C2E]" />
+                  <View className="flex-row items-center bg-[#1C1C1E] px-3 py-1.5 rounded-xl border border-[#2C2C2E]">
+                    <Ionicons name="flame" size={14} color="#F59E0B" />
+                    <Text className="text-white text-xs font-bold ml-1">Planned</Text>
+                  </View>
                 </View>
               </>
             )}
@@ -275,21 +255,40 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Start Workout CTA — Training is the single place to pick a routine
-            or start a quick workout; an active session resumes in place. */}
+        {/* Start Workout / Activity CTA */}
         <TouchableOpacity
           activeOpacity={0.85}
           className="bg-[#E63946] rounded-[20px] flex-row items-center justify-center py-4 mb-4"
-          onPress={() =>
-            isWorkoutActive ? router.push('/workout') : router.push('/(tabs)/journal')
-          }
+          onPress={() => {
+            if (isCardioActive) {
+              router.push('/cardio-tracker');
+            } else if (isWorkoutActive) {
+              router.push('/workout');
+            } else {
+              setShowSelectorModal(true);
+            }
+          }}
         >
-          <Ionicons name="barbell" size={20} color="#FFFFFF" />
+          <Ionicons
+            name={isCardioActive ? 'fitness' : 'barbell'}
+            size={20}
+            color="#FFFFFF"
+          />
           <Text className="text-white font-bold text-base ml-2">
-            {isWorkoutActive ? 'Resume Workout' : 'Start Workout'}
+            {isCardioActive
+              ? 'Resume Run / Activity'
+              : isWorkoutActive
+              ? 'Resume Workout'
+              : 'Record Activity'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Workout Type Selector Modal */}
+      <WorkoutSelectorModal
+        visible={showSelectorModal}
+        onClose={() => setShowSelectorModal(false)}
+      />
     </SafeAreaView>
   );
 }

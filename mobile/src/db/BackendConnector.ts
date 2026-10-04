@@ -3,9 +3,21 @@ import type { PowerSyncBackendConnector, PowerSyncCredentials } from '@powersync
 import { client } from '@/src/api/client';
 import { decodeJwtExp } from '@/src/utils/jwt';
 
-const SYNC_ENDPOINT =
+export const SYNC_ENDPOINT =
   process.env.EXPO_PUBLIC_POWERSYNC_URL ||
   (Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080');
+
+export async function isSyncServerReachable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 1000);
+    const res = await fetch(SYNC_ENDPOINT, { signal: controller.signal, method: 'GET' });
+    clearTimeout(timeoutId);
+    return !!res;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Connector that links the local PowerSync database to the self-hosted
@@ -46,7 +58,7 @@ export class BackendConnector implements PowerSyncBackendConnector {
       this.syncTokenRequest = (async () => {
         const { data } = await client.post<{ token: string }>(
           '/api/auth/sync-token',
-          null,
+          {},
           { headers: { Authorization: `Bearer ${sessionToken}` } }
         );
         this.syncToken = data.token;

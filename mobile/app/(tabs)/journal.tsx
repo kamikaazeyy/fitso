@@ -7,6 +7,7 @@ import { useRoutines } from '@/src/hooks/useRoutines';
 import { useRoutineMutations } from '@/src/hooks/useRoutineMutations';
 import { useAuth } from '@/context/AuthContext';
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
 import { LoadableContainer } from '@/components/LoadableContainer';
 
 export default function TrainingScreen() {
@@ -17,6 +18,8 @@ export default function TrainingScreen() {
   const isWorkoutActive = useWorkoutSessionStore((s) => s.isActive);
   const activeTitle = useWorkoutSessionStore((s) => s.title);
   const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
+  const isCardioActive = useCardioSessionStore((s) => s.isActive);
+  const cardioTitle = useCardioSessionStore((s) => s.title);
 
   const openRoutineMenu = (routineId: string, routineName: string) => {
     Alert.alert(routineName, undefined, [
@@ -94,6 +97,27 @@ export default function TrainingScreen() {
           <Text className="text-[#A0A0A0] text-sm mt-1">Pick a routine and start lifting.</Text>
         </View>
 
+        {isCardioActive && (
+          <TouchableOpacity
+            className="bg-[#121212] border border-[#38BDF8] rounded-[20px] p-4 mb-3 flex-row items-center justify-between"
+            activeOpacity={0.8}
+            onPress={() => router.push('/cardio-tracker')}
+          >
+            <View className="flex-row items-center flex-1">
+              <View className="w-2.5 h-2.5 rounded-full bg-[#38BDF8] mr-3" />
+              <View className="flex-1">
+                <Text className="text-[#38BDF8] text-xs font-semibold uppercase">
+                  Activity in progress
+                </Text>
+                <Text className="text-white font-bold" numberOfLines={1}>
+                  {cardioTitle || 'Outdoor Activity'}
+                </Text>
+              </View>
+            </View>
+            <Text className="text-[#38BDF8] font-bold text-sm ml-3">Resume</Text>
+          </TouchableOpacity>
+        )}
+
         {isWorkoutActive && (
           <TouchableOpacity
             className="bg-[#121212] border border-[#E63946] rounded-[20px] p-4 mb-5 flex-row items-center justify-between"
@@ -115,6 +139,36 @@ export default function TrainingScreen() {
           </TouchableOpacity>
         )}
 
+        {/* Outdoor Activity Quick Launchers */}
+        <View className="flex-row items-center justify-between gap-x-2.5 mb-4">
+          <TouchableOpacity
+            activeOpacity={0.8}
+            className="flex-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl py-3 items-center"
+            onPress={() => router.push('/cardio-tracker?type=run')}
+          >
+            <Ionicons name="fitness" size={22} color="#E63946" />
+            <Text className="text-white font-bold text-xs mt-1">Run</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            className="flex-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl py-3 items-center"
+            onPress={() => router.push('/cardio-tracker?type=ride')}
+          >
+            <Ionicons name="bicycle" size={22} color="#38BDF8" />
+            <Text className="text-white font-bold text-xs mt-1">Ride</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            className="flex-1 bg-[#1C1C1E] border border-[#2C2C2E] rounded-2xl py-3 items-center"
+            onPress={() => router.push('/cardio-tracker?type=walk')}
+          >
+            <Ionicons name="walk" size={22} color="#4ADE80" />
+            <Text className="text-white font-bold text-xs mt-1">Walk</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
           className="bg-[#E63946] rounded-[24px] p-5 flex-row items-center justify-between mb-5"
           activeOpacity={0.8}
@@ -122,7 +176,7 @@ export default function TrainingScreen() {
         >
           <View className="flex-row items-center">
             <Ionicons name="barbell" size={28} color="#FFFFFF" />
-            <Text className="text-white text-xl font-extrabold ml-3">Quick Workout</Text>
+            <Text className="text-white text-xl font-extrabold ml-3">Quick Gym Workout</Text>
           </View>
           <Ionicons name="chevron-forward" size={24} color="#FFFFFF" />
         </TouchableOpacity>

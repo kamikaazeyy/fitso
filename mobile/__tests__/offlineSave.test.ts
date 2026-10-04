@@ -149,7 +149,8 @@ describe('finishWorkout (offline)', () => {
     await store.getState().finishWorkout();
 
     const [workoutInsert] = insertsInto(db, WORKOUTS_TABLE);
-    expect(workoutInsert.params[7]).toBe(42);
+    expect(workoutInsert.params[4]).toBe('STRENGTH');
+    expect(workoutInsert.params[8]).toBe(42);
   });
 
   it('wipes the active session and its MMKV mirror after the write commits', async () => {

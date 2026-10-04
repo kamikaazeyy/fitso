@@ -79,7 +79,7 @@ export function UpdateChecker() {
         if (!Updates.isEnabled) {
           setPhase('disabled');
           log('Updates.isEnabled = false — this binary predates expo-updates');
-          setBannerVisible(true);
+          setBannerVisible(false);
           return;
         }
 

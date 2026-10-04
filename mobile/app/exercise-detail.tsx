@@ -14,6 +14,7 @@ import { mapCacheRow, type CachedExercise } from '@/src/services/exerciseCache';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight } from '@/src/utils/units';
 import { LoadableContainer } from '@/components/LoadableContainer';
+import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
 
 interface RecentSet {
   id: string;
@@ -83,7 +84,7 @@ export default function ExerciseDetailScreen() {
             `SELECT * FROM ${EXERCISE_CACHE_TABLE} WHERE id = ?`,
             [cachedId]
           );
-          const row = result.rows?._array?.[0] as Record<string, unknown> | undefined;
+          const row = extractFirstRow<Record<string, unknown>>(result);
           if (row) {
             const cached: CachedExercise = mapCacheRow(row);
             resolved = { ...cached, notes: null };
@@ -93,7 +94,7 @@ export default function ExerciseDetailScreen() {
             `SELECT * FROM ${CUSTOM_EXERCISES_TABLE} WHERE id = ?`,
             [customId]
           );
-          const row = result.rows?._array?.[0] as Record<string, unknown> | undefined;
+          const row = extractFirstRow<Record<string, unknown>>(result);
           if (row) {
             resolved = {
               name: row.name as string,
@@ -112,7 +113,7 @@ export default function ExerciseDetailScreen() {
             `SELECT * FROM ${EXERCISE_CACHE_TABLE} WHERE name = ? LIMIT 1`,
             [name]
           );
-          const row = cached.rows?._array?.[0] as Record<string, unknown> | undefined;
+          const row = extractFirstRow<Record<string, unknown>>(cached);
           if (row) {
             const mapped = mapCacheRow(row);
             resolved = { ...mapped, notes: null };
@@ -149,7 +150,7 @@ export default function ExerciseDetailScreen() {
         if (!cancelled) {
           setExercise(resolved);
           setRecentSets(
-            ((setsResult.rows?._array ?? []) as Record<string, unknown>[]).map((row) => ({
+            extractRows<Record<string, unknown>>(setsResult).map((row) => ({
               id: row.id as string,
               weight: (row.weight as number | null) ?? null,
               reps: (row.reps as number | null) ?? null,
