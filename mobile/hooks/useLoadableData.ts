@@ -5,7 +5,6 @@ export type LoadableStatus = 'loading' | 'empty' | 'data';
 export interface UseLoadableDataOptions<T> {
   initialData?: T | null;
   isEmpty?: (data: T) => boolean;
-  loadingDelay?: number;
 }
 
 export interface UseLoadableDataResult<T> {
@@ -19,15 +18,13 @@ export function useLoadableData<T>(
   deps: unknown[] = [],
   options: UseLoadableDataOptions<T> = {}
 ): UseLoadableDataResult<T> {
-  const { initialData = null, isEmpty, loadingDelay = 600 } = options;
+  const { initialData = null, isEmpty } = options;
 
   const loaderRef = useRef(loader);
   const isEmptyRef = useRef(isEmpty);
-  const loadingDelayRef = useRef(loadingDelay);
 
   loaderRef.current = loader;
   isEmptyRef.current = isEmpty;
-  loadingDelayRef.current = loadingDelay;
 
   const [data, setData] = useState<T | null>(initialData);
   const [status, setStatus] = useState<LoadableStatus>('loading');
@@ -41,7 +38,6 @@ export function useLoadableData<T>(
     const run = async () => {
       try {
         const result = await loaderRef.current();
-        await new Promise((resolve) => setTimeout(resolve, loadingDelayRef.current));
         if (cancelled) return;
 
         const emptyFn = isEmptyRef.current;

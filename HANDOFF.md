@@ -1,3 +1,7 @@
+> **Note:** This document is from an earlier UI-redesign phase and is largely
+> stale. The current architecture (offline-first PowerSync + Fastify + Postgres)
+> is documented in `AGENTS.md` — use that as the source of truth.
+
 # Fitso — Deep Continuation Handoff
 
 ## 1. Project

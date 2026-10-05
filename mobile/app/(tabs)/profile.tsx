@@ -1,46 +1,12 @@
 import { ScrollView, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import type { ComponentProps } from 'react';
-import { useLoadableData } from '@/hooks/useLoadableData';
-import { LoadableContainer } from '@/components/LoadableContainer';
+import { useRouter } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
 
-interface Stats {
-  weight: string;
-  height: string;
-  age: string;
-  goal: string;
-}
-
-interface ProfileData {
-  name: string;
-  email: string;
-  avatarIcon: string;
-  stats: Stats;
-}
-
-type IoniconsName = ComponentProps<typeof Ionicons>['name'];
-
-const DUMMY_PROFILE: ProfileData = {
-  name: 'Alex Fitso',
-  email: 'alex@fitso.app',
-  avatarIcon: 'person',
-  stats: {
-    weight: '78 kg',
-    height: '182 cm',
-    age: '28',
-    goal: 'Muscle gain',
-  },
-};
-
 export default function ProfileScreen() {
-  const { data, status } = useLoadableData<ProfileData>(
-    () => Promise.resolve(DUMMY_PROFILE),
-    [],
-    { loadingDelay: 500 }
-  );
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const router = useRouter();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
@@ -60,42 +26,32 @@ export default function ProfileScreen() {
         </View>
 
         {/* Profile card */}
-        <LoadableContainer
-          status={status}
-          loadingMessage="Loading profile..."
-          emptyIcon="person-outline"
-          emptyTitle="No profile found"
-          emptySubtitle="Set up your profile to see stats and settings."
-        >
-          {data && (
-            <View className="bg-[#121212] rounded-[24px] p-5 mb-5">
-              <View className="flex-row items-center">
-                <View className="w-16 h-16 rounded-full bg-[#E63946] items-center justify-center">
-                  <Ionicons name={data.avatarIcon as IoniconsName} size={32} color="#FFFFFF" />
-                </View>
-                <View className="ml-4">
-                  <Text className="text-white text-xl font-bold">{data.name}</Text>
-                  <Text className="text-[#A0A0A0] text-sm">{data.email}</Text>
-                </View>
-              </View>
-
-              <View className="mt-5 flex-row justify-around">
-                <View className="items-center">
-                  <Text className="text-white text-base font-bold">{data.stats.weight}</Text>
-                  <Text className="text-[#A0A0A0] text-sm">Weight</Text>
-                </View>
-                <View className="items-center">
-                  <Text className="text-white text-base font-bold">{data.stats.height}</Text>
-                  <Text className="text-[#A0A0A0] text-sm">Height</Text>
-                </View>
-                <View className="items-center">
-                  <Text className="text-white text-base font-bold">{data.stats.age}</Text>
-                  <Text className="text-[#A0A0A0] text-sm">Age</Text>
-                </View>
-              </View>
+        <View className="bg-[#121212] rounded-[24px] p-5 mb-5">
+          <View className="flex-row items-center">
+            <View className="w-16 h-16 rounded-full bg-[#E63946] items-center justify-center">
+              <Ionicons name="person" size={32} color="#FFFFFF" />
             </View>
-          )}
-        </LoadableContainer>
+            <View className="ml-4">
+              <Text className="text-white text-xl font-bold">{user?.name ?? 'Athlete'}</Text>
+              <Text className="text-[#A0A0A0] text-sm">{user?.email ?? ''}</Text>
+            </View>
+          </View>
+
+          <View className="mt-5 flex-row justify-around">
+            <View className="items-center">
+              <Text className="text-white text-base font-bold">—</Text>
+              <Text className="text-[#A0A0A0] text-sm">Weight</Text>
+            </View>
+            <View className="items-center">
+              <Text className="text-white text-base font-bold">—</Text>
+              <Text className="text-[#A0A0A0] text-sm">Height</Text>
+            </View>
+            <View className="items-center">
+              <Text className="text-white text-base font-bold">—</Text>
+              <Text className="text-[#A0A0A0] text-sm">Age</Text>
+            </View>
+          </View>
+        </View>
 
         {/* Settings */}
         <Text className="text-white text-lg font-extrabold mb-3">Settings</Text>
@@ -127,7 +83,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           activeOpacity={0.7}
           className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
-          onPress={() => Alert.alert('Coming soon', 'Units settings are under development.')}
+          onPress={() => router.push('/settings')}
         >
           <View className="flex-row items-center">
             <Ionicons name="options-outline" size={20} color="#E63946" />

@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import { AppState } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { client, setAuthToken } from '@/src/api/client';
+import { client, setAuthToken, refreshSession, setOnSessionExpired } from '@/src/api/client';
+import { connectPowerSync, disconnectPowerSync } from '@/src/db/PowerSyncProvider';
+import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
+import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
+import { decodeJwtExp } from '@/src/utils/jwt';
 
 export interface User {
   id: string;
@@ -15,6 +20,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<User>;
   signup: (email: string, password: string, name?: string) => Promise<User>;
+  continueAsGuest: (name?: string, email?: string) => Promise<User>;
   logout: () => Promise<void>;
 }
 
@@ -23,10 +29,29 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const TOKEN_KEY = 'authToken';
 const USER_KEY = 'authUser';
 
+// Refresh the session when less than this much lifetime remains on the
+// stored token.
+const REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const maybeRefreshSession = useCallback(async (currentToken: string | null) => {
+    if (!currentToken) return;
+    const exp = decodeJwtExp(currentToken);
+    if (exp === null || exp * 1000 - Date.now() >= REFRESH_WINDOW_MS) return;
+    try {
+      const { token: newToken, user: newUser } = await refreshSession();
+      setToken(newToken);
+      setUser(newUser);
+      useWorkoutSessionStore.getState().setUserId(newUser.id);
+      useCardioSessionStore.getState().setUserId(newUser.id);
+    } catch {
+      // An unrecoverable session is cleared by the client's 401 handler.
+    }
+  }, []);
 
   useEffect(() => {
     const load = async () => {
@@ -38,14 +63,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAuthToken(storedToken);
         }
         if (storedUser) {
-          setUser(JSON.parse(storedUser));
+          const parsedUser = JSON.parse(storedUser);
+          setUser(parsedUser);
+          useWorkoutSessionStore.getState().setUserId(parsedUser.id);
+          useCardioSessionStore.getState().setUserId(parsedUser.id);
+        }
+        if (storedToken) {
+          void maybeRefreshSession(storedToken);
         }
       } finally {
         setIsLoading(false);
       }
     };
     load();
+  }, [maybeRefreshSession]);
+
+  // When the API client gives up on the session (refresh rejected), clear
+  // auth state so the app returns to the login screen.
+  useEffect(() => {
+    setOnSessionExpired(() => {
+      setToken(null);
+      setUser(null);
+      useWorkoutSessionStore.getState().setUserId(null);
+      useCardioSessionStore.getState().setUserId(null);
+      disconnectPowerSync().catch(() => undefined);
+    });
+    return () => setOnSessionExpired(null);
   }, []);
+
+  // Proactively refresh a nearly-expired token when the app foregrounds.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void maybeRefreshSession(token);
+      }
+    });
+    return () => subscription.remove();
+  }, [token, maybeRefreshSession]);
 
   const persist = useCallback(async (newToken: string, newUser: User) => {
     await SecureStore.setItemAsync(TOKEN_KEY, newToken);
@@ -53,26 +107,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(newToken);
     setUser(newUser);
     setAuthToken(newToken);
+    useWorkoutSessionStore.getState().setUserId(newUser.id);
+    useCardioSessionStore.getState().setUserId(newUser.id);
+    // Connect PowerSync sync engine with the new token
+    connectPowerSync(newToken).catch((err) => {
+      console.warn('[Auth] Failed to connect PowerSync after login', err);
+    });
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { data } = await client.post<{ token: string; user: User }>('/api/auth/login', {
-      email,
-      password,
-    });
-    await persist(data.token, data.user);
-    return data.user;
+    try {
+      const { data } = await client.post<{ token: string; user: User }>('/api/auth/login', {
+        email,
+        password,
+      });
+      await persist(data.token, data.user);
+      return data.user;
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || 'Login failed';
+      throw new Error(message);
+    }
   }, [persist]);
 
   const signup = useCallback(async (email: string, password: string, name?: string) => {
-    const { data } = await client.post<{ token: string; user: User }>('/api/auth/signup', {
-      email,
-      password,
-      name,
-    });
-    await persist(data.token, data.user);
-    return data.user;
+    try {
+      const { data } = await client.post<{ token: string; user: User }>('/api/auth/signup', {
+        email,
+        password,
+        name,
+      });
+      await persist(data.token, data.user);
+      return data.user;
+    } catch (err: any) {
+      const message = err?.response?.data?.error || err?.message || 'Signup failed';
+      throw new Error(message);
+    }
   }, [persist]);
+
+  const continueAsGuest = useCallback(
+    async (guestName?: string, guestEmail?: string) => {
+      const guestUser: User = {
+        id: '00000000-0000-4000-8000-000000000001',
+        email: guestEmail?.trim() || 'athlete@fitso.local',
+        name: guestName?.trim() || 'Athlete',
+        dailyCalorieGoal: 2000,
+      };
+      // Synthetic offline JWT token with 10-year expiry
+      const guestToken =
+        'eyJhbGciOiJub25lIn0.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJlbWFpbCI6ImF0aGxldGVAZml0c28ubG9jYWwiLCJuYW1lIjoiQXRobGV0ZSIsImV4cCI6MjAwMDAwMDAwMH0.offline';
+
+      await persist(guestToken, guestUser);
+      return guestUser;
+    },
+    [persist]
+  );
 
   const logout = useCallback(async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
@@ -80,11 +168,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
     setAuthToken(null);
+    useWorkoutSessionStore.getState().setUserId(null);
+    useCardioSessionStore.getState().setUserId(null);
+    await disconnectPowerSync().catch(() => undefined);
   }, []);
 
   const value = useMemo(
-    () => ({ token, user, isLoading, login, signup, logout }),
-    [token, user, isLoading, login, signup, logout]
+    () => ({ token, user, isLoading, login, signup, continueAsGuest, logout }),
+    [token, user, isLoading, login, signup, continueAsGuest, logout]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
