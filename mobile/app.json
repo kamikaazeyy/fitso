@@ -7,10 +7,12 @@
     "userInterfaceStyle": "dark",
     "scheme": "fitso",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "runtimeVersion": {
       "policy": "fingerprint"
     },
     "splash": {
+      "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#0A0A0C"
     },
@@ -28,6 +30,7 @@
     },
     "android": {
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A0A0C"
       },
       "package": "com.fitso.app",
