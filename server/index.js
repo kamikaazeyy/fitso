@@ -5,6 +5,7 @@ const cors = require('@fastify/cors');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const monitor = require('./monitor');
 
 const app = Fastify({ logger: true });
 const prisma = new PrismaClient();
@@ -40,6 +41,12 @@ const JWT_VERIFY_KEY =
     : JWT_PRIVATE_KEY;
 
 app.register(cors, { origin: process.env.CORS_ORIGIN || '*' });
+app.register(monitor);
+
+// Allow text/plain bodies for POST requests
+app.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, _body, done) => {
+  done(null, {});
+});
 
 // Health checks
 app.get('/health', async () => ({ status: 'ok', server: 'fastify-prisma' }));
@@ -529,6 +536,14 @@ const COLUMN_MAP = {
   equipment: 'equipment',
   category: 'category',
   muscles: 'muscles',
+  workout_type: 'workoutType',
+  distance_meters: 'distanceMeters',
+  avg_pace_seconds_per_km: 'avgPaceSecondsPerKm',
+  max_speed_mps: 'maxSpeedMps',
+  elevation_gain_meters: 'elevationGainMeters',
+  calories_burned: 'caloriesBurned',
+  route_coordinates: 'routeCoordinates',
+  splits: 'splits',
 };
 
 // Tables that have a direct userId column — the server overrides this field
@@ -648,12 +663,12 @@ function transformOpData(table, opData) {
       transformedValue = transformedValue === 1 || transformedValue === true;
     }
 
-    // SQLite stores String[] as a JSON string; Prisma expects an array
-    if ((key === 'equipment' || key === 'muscles') && typeof transformedValue === 'string') {
+    // SQLite stores String[] / JSON objects as a JSON string; Prisma expects an array / object
+    if ((key === 'equipment' || key === 'muscles' || key === 'splits') && typeof transformedValue === 'string') {
       try {
         transformedValue = JSON.parse(transformedValue);
       } catch {
-        transformedValue = [];
+        transformedValue = key === 'splits' ? null : [];
       }
     }
 

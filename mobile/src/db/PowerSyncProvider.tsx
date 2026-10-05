@@ -2,7 +2,11 @@ import React, { useEffect, useMemo } from 'react';
 import { PowerSyncContext } from '@powersync/react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { getPowerSyncDatabase, setPowerSyncDatabase } from './database';
-import { getBackendConnector, setBackendConnectorToken } from './BackendConnector';
+import {
+  getBackendConnector,
+  setBackendConnectorToken,
+  isSyncServerReachable,
+} from './BackendConnector';
 import {
   CUSTOM_EXERCISES_TABLE,
   ROUTINE_EXERCISES_TABLE,
@@ -41,14 +45,17 @@ export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
     let disposeChangeListener: (() => void) | undefined;
     let cancelled = false;
 
-    // Connect to the sync server using the stored JWT
+    // Connect to the sync server using the stored JWT if online
     const connect = async () => {
       try {
         const token = await SecureStore.getItemAsync(TOKEN_KEY);
         if (token) {
           setBackendConnectorToken(token);
-          const connector = getBackendConnector();
-          await db.connect(connector);
+          const isOnline = await isSyncServerReachable();
+          if (isOnline) {
+            const connector = getBackendConnector();
+            await db.connect(connector);
+          }
         }
       } catch (error) {
         console.warn('[PowerSync] failed to connect to sync server', error);
@@ -93,13 +100,16 @@ export function PowerSyncProvider({ children }: { children: React.ReactNode }) {
 export async function connectPowerSync(token: string): Promise<void> {
   const db = getPowerSyncDatabase();
   setBackendConnectorToken(token);
-  const connector = getBackendConnector();
   try {
     await db.disconnect();
   } catch {
     // ignore if not connected
   }
-  await db.connect(connector);
+  const isOnline = await isSyncServerReachable();
+  if (isOnline) {
+    const connector = getBackendConnector();
+    await db.connect(connector);
+  }
 }
 
 /**

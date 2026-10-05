@@ -26,6 +26,7 @@ import {
 import { uuid } from '@/src/utils/id';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
 import { computeRoutineUpdate } from '@/src/utils/routineSync';
+import { extractRows } from '@/src/db/queryHelper';
 
 export const SESSION_STORAGE_KEY = 'fitso.active-workout';
 export const DEFAULT_REST_SECONDS = 90;
@@ -465,13 +466,14 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
           await db.writeTransaction(async (tx) => {
             await tx.execute(
               `INSERT INTO ${WORKOUTS_TABLE}
-                 (id, user_id, routine_id, split_id, title, started_at, finished_at, duration_seconds, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 (id, user_id, routine_id, split_id, workout_type, title, started_at, finished_at, duration_seconds, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               [
                 workoutId,
                 userId,
                 routineId,
                 splitId,
+                'STRENGTH',
                 title,
                 startedAt,
                 new Date(finishedAt).toISOString(),
@@ -518,7 +520,7 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                 [splitId]
               );
               const templateIds = new Set<string>(
-                ((templateResult.rows?._array ?? []) as { id: string }[]).map((row) => row.id)
+                extractRows<{ id: string }>(templateResult).map((row) => row.id)
               );
               const plan = computeRoutineUpdate(templateIds, exercises);
 

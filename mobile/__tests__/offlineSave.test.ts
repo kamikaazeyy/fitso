@@ -149,7 +149,8 @@ describe('finishWorkout (offline)', () => {
     await store.getState().finishWorkout();
 
     const [workoutInsert] = insertsInto(db, WORKOUTS_TABLE);
-    expect(workoutInsert.params[7]).toBe(42);
+    expect(workoutInsert.params[4]).toBe('STRENGTH');
+    expect(workoutInsert.params[8]).toBe(42);
   });
 
   it('excludes paused time from the saved duration', async () => {
@@ -167,7 +168,7 @@ describe('finishWorkout (offline)', () => {
     await store.getState().finishWorkout();
 
     const [workoutInsert] = insertsInto(db, WORKOUTS_TABLE);
-    expect(workoutInsert.params[7]).toBe(15);
+    expect(workoutInsert.params[8]).toBe(15);
   });
 
   it('tracks pause and resume via setPaused', () => {

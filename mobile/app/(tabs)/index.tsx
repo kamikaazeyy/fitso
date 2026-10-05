@@ -16,6 +16,8 @@ import { buildOverloadSeries, workoutReps, workoutVolume } from '@/src/utils/tra
 import { useWorkoutSessionStore } from '@/src/store/useWorkoutSessionStore';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight } from '@/src/utils/units';
+import { useCardioSessionStore } from '@/src/store/useCardioSessionStore';
+import { WorkoutSelectorModal } from '@/src/components';
 import { colors } from '@/constants/theme';
 
 function formatDuration(totalSeconds: number): string {
@@ -41,8 +43,10 @@ function startOfWeek(): Date {
 export default function HomeScreen() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [showSelectorModal, setShowSelectorModal] = useState(false);
   const isWorkoutActive = useWorkoutSessionStore((s) => s.isActive);
   const unit = useSettingsStore((s) => s.weightUnit);
+  const isCardioActive = useCardioSessionStore((s) => s.isActive);
 
   const { data: workouts, isLoading, error } = useWorkouts(50, 0);
   const status = isLoading ? 'loading' : error ? 'empty' : 'data';
@@ -195,21 +199,40 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* Start Workout CTA — Training is the single place to pick a routine
-            or start a quick workout; an active session resumes in place. */}
+        {/* Start Workout / Activity CTA */}
         <TouchableOpacity
           activeOpacity={0.85}
           className="bg-[#E63946] rounded-[20px] flex-row items-center justify-center py-4 mb-4"
-          onPress={() =>
-            isWorkoutActive ? router.push('/workout') : router.push('/(tabs)/journal')
-          }
+          onPress={() => {
+            if (isCardioActive) {
+              router.push('/cardio-tracker');
+            } else if (isWorkoutActive) {
+              router.push('/workout');
+            } else {
+              setShowSelectorModal(true);
+            }
+          }}
         >
-          <Ionicons name="barbell" size={20} color="#FFFFFF" />
+          <Ionicons
+            name={isCardioActive ? 'fitness' : 'barbell'}
+            size={20}
+            color="#FFFFFF"
+          />
           <Text className="text-white font-bold text-base ml-2">
-            {isWorkoutActive ? 'Resume Workout' : 'Start Workout'}
+            {isCardioActive
+              ? 'Resume Run / Activity'
+              : isWorkoutActive
+              ? 'Resume Workout'
+              : 'Record Activity'}
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Workout Type Selector Modal */}
+      <WorkoutSelectorModal
+        visible={showSelectorModal}
+        onClose={() => setShowSelectorModal(false)}
+      />
     </SafeAreaView>
   );
 }

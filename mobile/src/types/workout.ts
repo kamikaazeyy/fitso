@@ -71,3 +71,22 @@ export interface ActiveRestTimer {
   targetTimestamp: number;
   durationSeconds: number;
 }
+
+export type WorkoutType = 'STRENGTH' | 'RUN' | 'RIDE' | 'WALK' | 'HIIT';
+
+export interface CardioLocationPoint {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  speed?: number | null;
+  heading?: number | null;
+  timestamp: number;
+}
+
+export interface CardioSplit {
+  splitIndex: number;
+  distanceMeters: number;
+  durationSeconds: number;
+  paceSecondsPerKm: number;
+  elevationGainMeters: number;
+}

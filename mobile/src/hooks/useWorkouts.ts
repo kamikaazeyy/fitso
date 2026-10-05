@@ -18,8 +18,11 @@ export interface WorkoutSet {
 export interface WorkoutWithSets {
   id: string;
   userId: string;
+  workoutType: string;
   title: string;
   durationSeconds: number;
+  distanceMeters: number;
+  avgPaceSecondsPerKm: number | null;
   completedAt: string;
   sets: WorkoutSet[];
 }
@@ -27,8 +30,11 @@ export interface WorkoutWithSets {
 interface WorkoutRow {
   id: string;
   user_id: string;
+  workout_type: string | null;
   title: string;
   duration_seconds: number | null;
+  distance_meters: number | null;
+  avg_pace_seconds_per_km: number | null;
   finished_at: string;
 }
 
@@ -53,7 +59,7 @@ interface WorkoutSetRow {
  */
 export function useWorkouts(limit = 50, offset = 0) {
   const workoutsResult = useQuery<WorkoutRow>(
-    `SELECT id, user_id, title, duration_seconds, finished_at
+    `SELECT id, user_id, workout_type, title, duration_seconds, distance_meters, avg_pace_seconds_per_km, finished_at
      FROM workouts
      WHERE finished_at IS NOT NULL
      ORDER BY finished_at DESC
@@ -94,8 +100,11 @@ export function useWorkouts(limit = 50, offset = 0) {
     return workoutsResult.data.map((workout) => ({
       id: workout.id,
       userId: workout.user_id,
+      workoutType: workout.workout_type ?? 'STRENGTH',
       title: workout.title,
       durationSeconds: workout.duration_seconds ?? 0,
+      distanceMeters: workout.distance_meters ?? 0,
+      avgPaceSecondsPerKm: workout.avg_pace_seconds_per_km ?? null,
       completedAt: workout.finished_at,
       sets: setsByWorkout.get(workout.id) ?? [],
     }));

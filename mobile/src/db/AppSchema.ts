@@ -24,13 +24,21 @@ const workouts = new Table(
     user_id: column.text,
     routine_id: column.text,
     split_id: column.text,
+    workout_type: column.text,
     title: column.text,
     started_at: column.text,
     finished_at: column.text,
     duration_seconds: column.integer,
+    distance_meters: column.real,
+    avg_pace_seconds_per_km: column.integer,
+    max_speed_mps: column.real,
+    elevation_gain_meters: column.real,
+    calories_burned: column.integer,
+    route_coordinates: column.text,
+    splits: column.text,
     created_at: column.text,
   },
-  { indexes: { by_user: ['user_id'], by_routine: ['routine_id'] } }
+  { indexes: { by_user: ['user_id'], by_routine: ['routine_id'], by_type: ['workout_type'] } }
 );
 
 const splits = new Table(

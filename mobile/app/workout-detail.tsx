@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Share,
   Text,
   TextInput,
   TouchableOpacity,
@@ -14,13 +15,22 @@ import { usePowerSync } from '@powersync/react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { WORKOUT_SETS_TABLE, WORKOUTS_TABLE } from '@/src/db/AppSchema';
-import { SET_TYPE_CYCLE, SET_TYPE_LABELS, type SetType } from '@/src/types/workout';
+import { SET_TYPE_CYCLE, SET_TYPE_LABELS, type SetType, type CardioSplit } from '@/src/types/workout';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight, formatWeight, parseWeightInput, type WeightUnit } from '@/src/utils/units';
 import { uuid } from '@/src/utils/id';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { colors } from '@/constants/theme';
+import { ActivityMap, SplitsTable } from '@/src/components';
+import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
+import {
+  decodeCoordinates,
+  formatPace,
+  formatSpeed,
+  formatDistance,
+  generateGpxString,
+} from '@/src/utils/geo';
 
 interface SetDraft {
   id: string;
@@ -46,10 +56,18 @@ interface ExerciseGroup {
 
 interface WorkoutRow {
   id: string;
+  workout_type: string | null;
   title: string;
   started_at: string;
   finished_at: string;
   duration_seconds: number | null;
+  distance_meters: number | null;
+  avg_pace_seconds_per_km: number | null;
+  max_speed_mps: number | null;
+  elevation_gain_meters: number | null;
+  calories_burned: number | null;
+  route_coordinates: string | null;
+  splits: string | null;
 }
 
 const SET_TYPE_COLORS: Record<SetType, string> = {
@@ -133,11 +151,13 @@ export default function WorkoutDetailScreen() {
     const load = async () => {
       try {
         const workoutResult = await db.execute(
-          `SELECT id, title, started_at, finished_at, duration_seconds
+          `SELECT id, workout_type, title, started_at, finished_at, duration_seconds,
+                  distance_meters, avg_pace_seconds_per_km, max_speed_mps,
+                  elevation_gain_meters, calories_burned, route_coordinates, splits
            FROM ${WORKOUTS_TABLE} WHERE id = ?`,
           [workoutId]
         );
-        const row = workoutResult.rows?._array?.[0] as WorkoutRow | undefined;
+        const row = extractFirstRow<WorkoutRow>(workoutResult);
         if (!row) {
           if (!cancelled) setError('Workout not found');
           return;
@@ -162,11 +182,11 @@ export default function WorkoutDetailScreen() {
           [workoutId, row.started_at]
         );
         const bests = new Map<string, number>();
-        for (const prior of (priorResult.rows?._array ?? []) as {
+        for (const prior of extractRows<{
           exercise_name: string;
           weight: number | null;
           reps: number | null;
-        }[]) {
+        }>(priorResult)) {
           const e1rm = estimateOneRepMax(prior.weight, prior.reps);
           if (e1rm !== null && e1rm > (bests.get(prior.exercise_name) ?? 0)) {
             bests.set(prior.exercise_name, e1rm);
@@ -176,7 +196,7 @@ export default function WorkoutDetailScreen() {
         if (!cancelled) {
           setWorkout(row);
           setTitle(row.title);
-          setGroups(groupSets((setsResult.rows?._array ?? []) as Record<string, unknown>[], unit));
+          setGroups(groupSets(extractRows<Record<string, unknown>>(setsResult), unit));
           setPriorBests(bests);
         }
       } catch (err) {
@@ -367,11 +387,51 @@ export default function WorkoutDetailScreen() {
     ]);
   };
 
+  const isCardio = workout?.workout_type && workout.workout_type !== 'STRENGTH';
+
+  const coordinates = useMemo(() => {
+    if (!workout?.route_coordinates) return [];
+    return decodeCoordinates(workout.route_coordinates);
+  }, [workout?.route_coordinates]);
+
+  const splits = useMemo<CardioSplit[]>(() => {
+    if (!workout?.splits) return [];
+    try {
+      return typeof workout.splits === 'string' ? JSON.parse(workout.splits) : workout.splits;
+    } catch {
+      return [];
+    }
+  }, [workout?.splits]);
+
+  const handleExportGpx = async () => {
+    if (!workout || coordinates.length === 0) {
+      Alert.alert('No GPS Route', 'This activity does not have GPS track data to export.');
+      return;
+    }
+    try {
+      const gpx = generateGpxString(
+        workout.title,
+        workout.started_at,
+        coordinates.map((c, i) => ({
+          latitude: c.latitude,
+          longitude: c.longitude,
+          timestamp: new Date(workout.started_at).getTime() + i * 1000,
+        }))
+      );
+      await Share.share({
+        title: `${workout.title}.gpx`,
+        message: gpx,
+      });
+    } catch (err) {
+      Alert.alert('Export Failed', 'Could not share GPX track.');
+    }
+  };
+
   const status = loading ? 'loading' : error || !workout ? 'empty' : 'data';
 
   return (
-    <SafeAreaView className="flex-1 bg-black">
-      <View className="flex-row items-center justify-between px-4 py-4">
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }} className="flex-1 bg-black">
+      <View style={{ backgroundColor: '#000000' }} className="flex-row items-center justify-between px-4 py-4">
         <View className="flex-row items-center flex-1">
           <TouchableOpacity
             onPress={() => router.back()}
@@ -395,8 +455,8 @@ export default function WorkoutDetailScreen() {
             )}
             {workout && (
               <Text className="text-[#A0A0A0] text-xs mt-0.5">
-                {formatDate(workout.finished_at)} · {formatDuration(workout.duration_seconds ?? 0)} ·{' '}
-                {formatWeight(totalVolume, unit)}
+                {formatDate(workout.finished_at)} · {formatDuration(workout.duration_seconds ?? 0)}
+                {!isCardio && ` · ${formatWeight(totalVolume, unit)}`}
               </Text>
             )}
           </View>
@@ -426,6 +486,7 @@ export default function WorkoutDetailScreen() {
       </View>
 
       <ScrollView
+        style={{ flex: 1, backgroundColor: '#000000' }}
         className="flex-1 px-4"
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
@@ -439,7 +500,82 @@ export default function WorkoutDetailScreen() {
           emptySubtitle={error ?? 'It may have been deleted.'}
           error={error}
         >
-          {groups.map((group) => (
+          {isCardio ? (
+            <View>
+              {/* Interactive Route Map */}
+              {coordinates.length > 0 ? (
+                <View className="h-72 rounded-[24px] overflow-hidden mb-4 border border-[#2C2C2E]">
+                  <ActivityMap coordinates={coordinates} interactive={true} isLive={false} />
+                </View>
+              ) : (
+                <View className="h-40 bg-[#121212] rounded-[24px] items-center justify-center mb-4 border border-[#2C2C2E]">
+                  <Ionicons name="map-outline" size={32} color="#8E8E93" />
+                  <Text className="text-[#8E8E93] text-sm mt-2">No GPS route captured for this workout</Text>
+                </View>
+              )}
+
+              {/* Primary Stats Grid */}
+              <View className="bg-[#121212] rounded-[24px] p-5 mb-4 border border-[#1C1C1E]">
+                <View className="flex-row items-center justify-between pb-4 border-b border-[#1C1C1E]">
+                  <View className="flex-1">
+                    <Text className="text-[#8E8E93] text-xs font-bold uppercase tracking-wider">Distance</Text>
+                    <Text className="text-white text-3xl font-extrabold mt-1">
+                      {((workout?.distance_meters ?? 0) / 1000).toFixed(2)}{' '}
+                      <Text className="text-base text-[#8E8E93] font-semibold">km</Text>
+                    </Text>
+                  </View>
+                  <View className="flex-1 items-end">
+                    <Text className="text-[#8E8E93] text-xs font-bold uppercase tracking-wider">Avg Pace</Text>
+                    <Text className="text-white text-3xl font-extrabold mt-1">
+                      {formatPace(workout?.avg_pace_seconds_per_km)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View className="flex-row items-center justify-between pt-4">
+                  <View className="flex-1">
+                    <Text className="text-[#8E8E93] text-xs font-semibold uppercase">Time</Text>
+                    <Text className="text-white text-lg font-bold mt-0.5">
+                      {formatDuration(workout?.duration_seconds ?? 0)}
+                    </Text>
+                  </View>
+                  <View className="flex-1 items-center">
+                    <Text className="text-[#8E8E93] text-xs font-semibold uppercase">Elevation</Text>
+                    <Text className="text-white text-lg font-bold mt-0.5">
+                      +{Math.round(workout?.elevation_gain_meters ?? 0)} m
+                    </Text>
+                  </View>
+                  <View className="flex-1 items-end">
+                    <Text className="text-[#8E8E93] text-xs font-semibold uppercase">Calories</Text>
+                    <Text className="text-white text-lg font-bold mt-0.5">
+                      {workout?.calories_burned ?? 0} kcal
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* 1km Splits Table */}
+              {splits.length > 0 && (
+                <View className="mb-4">
+                  <Text className="text-white text-lg font-bold mb-2.5">Kilometer Splits</Text>
+                  <SplitsTable splits={splits} avgPaceSecondsPerKm={workout?.avg_pace_seconds_per_km} />
+                </View>
+              )}
+
+              {/* Export GPX Button */}
+              {coordinates.length > 0 && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  className="bg-[#1C1C1E] border border-[#2C2C2E] rounded-[20px] py-3.5 flex-row items-center justify-center mb-4"
+                  onPress={handleExportGpx}
+                >
+                  <Ionicons name="share-outline" size={18} color="#E63946" />
+                  <Text className="text-white font-bold text-sm ml-2">Export GPX Track</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            groups.map((group) => (
             <View key={group.key} className="bg-[#121212] rounded-[20px] p-4 mb-3">
               <Text className="text-white text-base font-bold mb-3">{group.name}</Text>
 
@@ -569,7 +705,7 @@ export default function WorkoutDetailScreen() {
                 </TouchableOpacity>
               )}
             </View>
-          ))}
+          )))}
         </LoadableContainer>
       </ScrollView>
     </SafeAreaView>

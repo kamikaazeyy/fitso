@@ -11,10 +11,18 @@ streams:
         "userId" as user_id,
         "routineId" as routine_id,
         "splitId" as split_id,
+        "workoutType" as workout_type,
         title,
         "startedAt" as started_at,
         "finishedAt" as finished_at,
         "durationSeconds" as duration_seconds,
+        "distanceMeters" as distance_meters,
+        "avgPaceSecondsPerKm" as avg_pace_seconds_per_km,
+        "maxSpeedMps" as max_speed_mps,
+        "elevationGainMeters" as elevation_gain_meters,
+        "caloriesBurned" as calories_burned,
+        "routeCoordinates" as route_coordinates,
+        splits,
         "createdAt" as created_at
       FROM "Workout" AS workouts
       WHERE "userId" = auth.user_id()

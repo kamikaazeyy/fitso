@@ -21,19 +21,27 @@ model User {
 }
 
 model Workout {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String   @db.Uuid
-  routineId       String?  @db.Uuid
-  splitId         String?  @db.Uuid
-  title           String
-  startedAt       DateTime @default(now())
-  finishedAt      DateTime @default(now())
-  durationSeconds Int      @default(0)
-  completedAt     DateTime @default(now())
-  createdAt       DateTime @default(now())
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  routine         Routine? @relation(fields: [routineId], references: [id], onDelete: SetNull)
-  sets            WorkoutSet[]
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId              String   @db.Uuid
+  routineId           String?  @db.Uuid
+  splitId             String?  @db.Uuid
+  workoutType         String   @default("STRENGTH")
+  title               String
+  startedAt           DateTime @default(now())
+  finishedAt          DateTime @default(now())
+  durationSeconds     Int      @default(0)
+  completedAt         DateTime @default(now())
+  createdAt           DateTime @default(now())
+  distanceMeters      Decimal? @db.Decimal(10,2) @default(0)
+  avgPaceSecondsPerKm Int?
+  maxSpeedMps         Decimal? @db.Decimal(6,2)
+  elevationGainMeters Decimal? @db.Decimal(7,2) @default(0)
+  caloriesBurned      Int?
+  routeCoordinates    String?  @db.Text
+  splits              Json?
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  routine             Routine? @relation(fields: [routineId], references: [id], onDelete: SetNull)
+  sets                WorkoutSet[]
 }
 
 model WorkoutSet {
