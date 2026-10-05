@@ -11,6 +11,12 @@
     "runtimeVersion": {
       "policy": "fingerprint"
     },
+    "updates": {
+      "url": "https://u.expo.dev/482787fa-e962-4caa-af26-286ecaf34de0",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -79,9 +85,8 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "93de2172-a918-4455-8b28-666449a21fd2"
+        "projectId": "482787fa-e962-4caa-af26-286ecaf34de0"
       }
-    },
-    "owner": "mehvarun"
+    }
   }
 }
