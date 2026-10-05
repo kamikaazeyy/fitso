@@ -11,6 +11,7 @@ const baseURL = process.env.EXPO_PUBLIC_API_URL || fallbackBaseURL;
 
 export const client = axios.create({
   baseURL,
+  timeout: 15000,
 });
 
 const TOKEN_KEY = 'authToken';
