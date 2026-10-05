@@ -69,7 +69,9 @@ services:
       CADDY_HOST: ${CADDY_HOST:-:80}
     ports:
       - "80:80"
-      - "443:443"
+      # Tailscale serve owns :443 on the tailnet interface (tailscaled binds
+      # 100.x IPs). Pin HTTPS to the LAN IP so both can coexist.
+      - "${CADDY_BIND_IP:-0.0.0.0}:443:443"
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
