@@ -5,6 +5,7 @@ const cors = require('@fastify/cors');
 const { PrismaClient } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const monitor = require('./monitor');
 
 const app = Fastify({ logger: true });
 const prisma = new PrismaClient();
@@ -40,6 +41,7 @@ const JWT_VERIFY_KEY =
     : JWT_PRIVATE_KEY;
 
 app.register(cors, { origin: process.env.CORS_ORIGIN || '*' });
+app.register(monitor);
 
 // Allow text/plain bodies for POST requests
 app.addContentTypeParser('text/plain', { parseAs: 'string' }, (_req, _body, done) => {
