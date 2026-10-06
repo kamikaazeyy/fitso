@@ -6,7 +6,7 @@ const TRACK = '#2C2C2E';
 const SIZE = 84;
 const STROKE = 7;
 
-interface RingProps {
+export interface StatusRing {
   /** 0..1 fill fraction. */
   fill: number;
   /** Center label, e.g. "44%". */
@@ -16,7 +16,7 @@ interface RingProps {
   color: string;
 }
 
-function Ring({ fill, value, label, sublabel, color }: RingProps) {
+function Ring({ fill, value, label, sublabel, color }: StatusRing) {
   const clamped = Math.max(0, Math.min(1, fill));
   const r = (SIZE - STROKE) / 2;
   const c = 2 * Math.PI * r;
@@ -60,45 +60,12 @@ function Ring({ fill, value, label, sublabel, color }: RingProps) {
   );
 }
 
-export interface StatusRingsProps {
-  /** 0..1 — week volume vs trailing weekly average. */
-  load: number;
-  loadValue: string;
-  loadSublabel: string;
-  /** 0..1 — hours since last session saturating at 48h. */
-  recovery: number;
-  recoveryValue: string;
-  recoverySublabel: string;
-  /** 0..1 — sessions this week vs weekly target. */
-  consistency: number;
-  consistencyValue: string;
-  consistencySublabel: string;
-}
-
-export function StatusRings(props: StatusRingsProps) {
+export function StatusRings({ rings }: { rings: StatusRing[] }) {
   return (
     <View className="flex-row justify-between">
-      <Ring
-        fill={props.load}
-        value={props.loadValue}
-        label="Load"
-        sublabel={props.loadSublabel}
-        color="#E63946"
-      />
-      <Ring
-        fill={props.recovery}
-        value={props.recoveryValue}
-        label="Recovery"
-        sublabel={props.recoverySublabel}
-        color="#4ADE80"
-      />
-      <Ring
-        fill={props.consistency}
-        value={props.consistencyValue}
-        label="Consistency"
-        sublabel={props.consistencySublabel}
-        color="#00E5FF"
-      />
+      {rings.map((ring) => (
+        <Ring key={ring.label} {...ring} />
+      ))}
     </View>
   );
 }

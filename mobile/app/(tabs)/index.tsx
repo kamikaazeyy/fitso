@@ -33,12 +33,6 @@ function formatNumber(n: number): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
-function formatHours(hours: number): string {
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
-  if (hours < 48) return `${Math.round(hours)}h`;
-  return `${Math.round(hours / 24)}d`;
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -90,13 +84,9 @@ export default function HomeScreen() {
       : today.weekVolumeKg > 0
       ? 1
       : 0;
-  const recoveryFill =
-    today.hoursSinceLastWorkout === null ? 0 : Math.min(1, today.hoursSinceLastWorkout / 48);
   const consistencyFill = Math.min(1, today.sessionsThisWeek / today.weeklyTarget);
 
   const loadPct = Math.round(loadFill * 100);
-  const recoveryPct =
-    today.hoursSinceLastWorkout === null ? null : Math.round(recoveryFill * 100);
   const consistencyPct = Math.round(consistencyFill * 100);
 
   const maxDaily = Math.max(0, ...today.dailyVolumes.map((d) => d.value));
@@ -162,19 +152,22 @@ export default function HomeScreen() {
           {/* Status rings */}
           <View className="bg-[#121212] rounded-[24px] p-5 mb-4">
             <StatusRings
-              load={loadFill}
-              loadValue={`${loadPct}%`}
-              loadSublabel="of typical week"
-              recovery={recoveryFill}
-              recoveryValue={recoveryPct === null ? '—' : `${recoveryPct}%`}
-              recoverySublabel={
-                today.hoursSinceLastWorkout === null
-                  ? 'no sessions yet'
-                  : `${formatHours(today.hoursSinceLastWorkout)} rest`
-              }
-              consistency={consistencyFill}
-              consistencyValue={`${consistencyPct}%`}
-              consistencySublabel={`${today.sessionsThisWeek} of ${today.weeklyTarget} sessions`}
+              rings={[
+                {
+                  fill: loadFill,
+                  value: `${loadPct}%`,
+                  label: 'Load',
+                  sublabel: 'of typical week',
+                  color: '#E63946',
+                },
+                {
+                  fill: consistencyFill,
+                  value: `${consistencyPct}%`,
+                  label: 'Consistency',
+                  sublabel: `${today.sessionsThisWeek} of ${today.weeklyTarget} sessions`,
+                  color: '#00E5FF',
+                },
+              ]}
             />
           </View>
 
