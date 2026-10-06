@@ -327,7 +327,7 @@ export default function ExerciseDetailScreen() {
                     {bestSet && (
                       <Text className="text-[#E63946] text-xs font-bold mb-2">
                         All-time best: {displayWeight(bestSet.weight, unit)} {unit} × {bestSet.reps}
-                        {' '}(est. 1RM {displayWeight(bestSet.e1rm, unit)} {unit})
+                        {' '}(est. 1RM {Math.round((displayWeight(bestSet.e1rm, unit) ?? 0) * 10) / 10} {unit})
                       </Text>
                     )}
                     {recentSets.map((set) => (
