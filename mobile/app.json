@@ -8,9 +8,7 @@
     "scheme": "fitso",
     "newArchEnabled": true,
     "icon": "./assets/icon.png",
-    "runtimeVersion": {
-      "policy": "fingerprint"
-    },
+    "runtimeVersion": "56ad058b761e3e6ac1ed521bd46ccbbd92c8dda4",
     "updates": {
       "url": "https://u.expo.dev/482787fa-e962-4caa-af26-286ecaf34de0",
       "enabled": true,
