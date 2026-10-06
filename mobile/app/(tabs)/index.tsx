@@ -60,6 +60,11 @@ export default function HomeScreen() {
     );
   }, [selectedDate]);
 
+  const handleSelectDate = (date: Date) => {
+    const now = new Date();
+    setSelectedDate(date.getTime() > now.getTime() ? now : date);
+  };
+
   const today = useMemo(
     () => computeTodayStats(list, weeklyTarget, selectedDate),
     [list, weeklyTarget, selectedDate]
@@ -143,7 +148,7 @@ export default function HomeScreen() {
 
         {/* Day picker — selects the day this screen reports on */}
         <View className="mb-5">
-          <DatePickerStrip selectedDate={selectedDate} onSelectDate={setSelectedDate} />
+          <DatePickerStrip selectedDate={selectedDate} onSelectDate={handleSelectDate} />
         </View>
 
         <LoadableContainer
