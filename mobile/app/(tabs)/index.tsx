@@ -84,10 +84,15 @@ export default function HomeScreen() {
       : today.weekVolumeKg > 0
       ? 1
       : 0;
-  const consistencyFill = Math.min(1, today.sessionsThisWeek / today.weeklyTarget);
+  const todayFill =
+    today.medianSessionVolumeKg > 0
+      ? Math.min(1, today.todayVolumeKg / today.medianSessionVolumeKg)
+      : today.todayVolumeKg > 0
+      ? 1
+      : 0;
 
   const loadPct = Math.round(loadFill * 100);
-  const consistencyPct = Math.round(consistencyFill * 100);
+  const todayPct = Math.round(todayFill * 100);
 
   const maxDaily = Math.max(0, ...today.dailyVolumes.map((d) => d.value));
   const headerLabel = isSelectedToday
@@ -161,10 +166,10 @@ export default function HomeScreen() {
                   color: '#E63946',
                 },
                 {
-                  fill: consistencyFill,
-                  value: `${consistencyPct}%`,
-                  label: 'Consistency',
-                  sublabel: `${today.sessionsThisWeek} of ${today.weeklyTarget} sessions`,
+                  fill: todayFill,
+                  value: `${todayPct}%`,
+                  label: isSelectedToday ? 'Today' : 'That day',
+                  sublabel: 'vs typical session',
                   color: '#00E5FF',
                 },
               ]}

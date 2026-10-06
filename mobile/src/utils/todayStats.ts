@@ -20,6 +20,8 @@ export interface TodayStats {
   weekVolumeKg: number;
   /** Average weekly volume over the trailing 28 days (kg). */
   avgWeekVolumeKg: number;
+  /** Median per-session volume over the trailing 28 days (kg, strength only). */
+  medianSessionVolumeKg: number;
   /** Consecutive weeks (counting current) with at least one session. */
   weekStreak: number;
   /** Mon..Sun volume buckets for the current week. */
@@ -104,6 +106,16 @@ export function computeTodayStats(
     weekVolumeKg: thisWeek.reduce((sum, w) => sum + workoutVolume(w.sets), 0),
     avgWeekVolumeKg:
       trailing28.reduce((sum, w) => sum + workoutVolume(w.sets), 0) / 4,
+    medianSessionVolumeKg: (() => {
+      const vols = trailing28
+        .filter((w) => !w.workoutType || w.workoutType === 'STRENGTH')
+        .map((w) => workoutVolume(w.sets))
+        .filter((v) => v > 0)
+        .sort((a, b) => a - b);
+      if (vols.length === 0) return 0;
+      const mid = Math.floor(vols.length / 2);
+      return vols.length % 2 ? vols[mid] : (vols[mid - 1] + vols[mid]) / 2;
+    })(),
     weekStreak,
     dailyVolumes,
   };
