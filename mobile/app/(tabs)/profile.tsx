@@ -1,12 +1,35 @@
+import { useState } from 'react';
 import { ScrollView, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Updates from 'expo-updates';
 import { useAuth } from '@/context/AuthContext';
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const [checking, setChecking] = useState(false);
+
+  const checkForUpdate = async () => {
+    setChecking(true);
+    try {
+      const result = await Updates.checkForUpdateAsync();
+      if (!result.isAvailable) {
+        Alert.alert('Up to date', 'No update is available for this build.');
+        return;
+      }
+      await Updates.fetchUpdateAsync();
+      Alert.alert('Update downloaded', 'Restart the app to apply the update.', [
+        { text: 'Later', style: 'cancel' },
+        { text: 'Restart now', onPress: () => Updates.reloadAsync() },
+      ]);
+    } catch (e) {
+      Alert.alert('Update check failed', e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: '#000000' }}>
@@ -103,6 +126,50 @@ export default function ProfileScreen() {
           </View>
           <Ionicons name="chevron-forward" size={20} color="#A0A0A0" />
         </TouchableOpacity>
+
+        {Updates.isEnabled && (
+          <>
+            <Text className="text-white text-lg font-extrabold mb-3 mt-4">App Update</Text>
+            <View className="bg-[#121212] rounded-[20px] p-4 mb-2">
+              <View className="flex-row justify-between mb-2">
+                <Text className="text-[#A0A0A0] text-sm">Channel</Text>
+                <Text className="text-white text-sm font-semibold">
+                  {Updates.channel ?? '—'}
+                </Text>
+              </View>
+              <View className="flex-row justify-between mb-2">
+                <Text className="text-[#A0A0A0] text-sm">Runtime version</Text>
+                <Text className="text-white text-sm font-semibold">
+                  {Updates.runtimeVersion
+                    ? `${Updates.runtimeVersion.slice(0, 12)}…`
+                    : '—'}
+                </Text>
+              </View>
+              <View className="flex-row justify-between">
+                <Text className="text-[#A0A0A0] text-sm">Update</Text>
+                <Text className="text-white text-sm font-semibold">
+                  {Updates.isEmbeddedLaunch
+                    ? 'embedded bundle'
+                    : (Updates.updateId?.slice(0, 8) ?? '—')}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              className="bg-[#121212] rounded-[20px] p-4 flex-row items-center justify-between mb-2"
+              disabled={checking}
+              onPress={checkForUpdate}
+            >
+              <View className="flex-row items-center">
+                <Ionicons name="cloud-download-outline" size={20} color="#E63946" />
+                <Text className="text-white font-semibold ml-3">
+                  {checking ? 'Checking…' : 'Check for Update'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#A0A0A0" />
+            </TouchableOpacity>
+          </>
+        )}
 
         <TouchableOpacity
           activeOpacity={0.7}
