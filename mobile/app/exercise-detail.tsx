@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,6 +13,7 @@ import {
 import { mapCacheRow, type CachedExercise } from '@/src/services/exerciseCache';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight } from '@/src/utils/units';
+import { estimateOneRepMax } from '@/src/utils/oneRepMax';
 import { LoadableContainer } from '@/components/LoadableContainer';
 import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
 
@@ -21,6 +22,12 @@ interface RecentSet {
   weight: number | null;
   reps: number | null;
   finishedAt: string;
+}
+
+interface BestSet {
+  weight: number;
+  reps: number;
+  e1rm: number;
 }
 
 function parseJsonArray(raw: string | null | undefined): string[] {
@@ -58,6 +65,7 @@ export default function ExerciseDetailScreen() {
     notes: string | null;
   } | null>(null);
   const [recentSets, setRecentSets] = useState<RecentSet[]>([]);
+  const [bestSet, setBestSet] = useState<BestSet | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,6 +155,27 @@ export default function ExerciseDetailScreen() {
           [resolved.name]
         );
 
+        // All-time best NORMAL set by estimated 1RM — the same notion of
+        // personal record the rest of the app uses.
+        const bestResult = await db.execute(
+          `SELECT ws.weight, ws.reps
+           FROM ${WORKOUT_SETS_TABLE} ws
+           INNER JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
+           WHERE ws.exercise_name = ? AND ws.is_completed = 1
+             AND (ws.set_type IS NULL OR ws.set_type = 'NORMAL')`,
+          [resolved.name]
+        );
+        let best: BestSet | null = null;
+        for (const row of (bestResult.rows?._array ?? []) as {
+          weight: number | null;
+          reps: number | null;
+        }[]) {
+          const e1rm = estimateOneRepMax(row.weight, row.reps);
+          if (e1rm !== null && (!best || e1rm > best.e1rm)) {
+            best = { weight: row.weight ?? 0, reps: row.reps ?? 0, e1rm };
+          }
+        }
+
         if (!cancelled) {
           setExercise(resolved);
           setRecentSets(
@@ -157,6 +186,7 @@ export default function ExerciseDetailScreen() {
               finishedAt: row.finished_at as string,
             }))
           );
+          setBestSet(best);
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load exercise');
@@ -172,15 +202,6 @@ export default function ExerciseDetailScreen() {
   }, [cachedId, customId, name, db]);
 
   const status = loading ? 'loading' : error || !exercise ? 'empty' : 'data';
-
-  const bestSet = useMemo(() => {
-    let best: RecentSet | null = null;
-    for (const set of recentSets) {
-      const volume = (set.weight ?? 0) * (set.reps ?? 0);
-      if (!best || volume > (best.weight ?? 0) * (best.reps ?? 0)) best = set;
-    }
-    return best;
-  }, [recentSets]);
 
   const handleDeleteCustom = () => {
     if (!customId) return;
@@ -305,7 +326,8 @@ export default function ExerciseDetailScreen() {
                   <>
                     {bestSet && (
                       <Text className="text-[#E63946] text-xs font-bold mb-2">
-                        Best: {displayWeight(bestSet.weight, unit)} {unit} × {bestSet.reps}
+                        All-time best: {displayWeight(bestSet.weight, unit)} {unit} × {bestSet.reps}
+                        {' '}(est. 1RM {displayWeight(bestSet.e1rm, unit)} {unit})
                       </Text>
                     )}
                     {recentSets.map((set) => (

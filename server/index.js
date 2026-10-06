@@ -117,14 +117,22 @@ function createToken(userId, expiresIn = SESSION_TOKEN_TTL) {
 }
 
 // Auth: Sign Up
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 app.post('/api/auth/signup', { preHandler: rateLimitAuth }, async (request, reply) => {
   const { email, password, name } = request.body || {};
 
   if (!email || !password) {
     return reply.code(400).send({ error: 'Email and password are required' });
   }
+  if (typeof email !== 'string' || !EMAIL_RE.test(email.trim())) {
+    return reply.code(400).send({ error: 'Invalid email address' });
+  }
+  if (typeof password !== 'string' || password.length < 6) {
+    return reply.code(400).send({ error: 'Password must be at least 6 characters' });
+  }
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const normalizedEmail = email.trim();
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) {
     return reply.code(409).send({ error: 'An account with that email already exists' });
   }
@@ -132,7 +140,7 @@ app.post('/api/auth/signup', { preHandler: rateLimitAuth }, async (request, repl
   try {
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
-      data: { email, name: name || null, passwordHash },
+      data: { email: normalizedEmail, name: name || null, passwordHash },
     });
 
     const token = createToken(user.id);
@@ -160,7 +168,7 @@ app.post('/api/auth/login', { preHandler: rateLimitAuth }, async (request, reply
   }
 
   try {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findUnique({ where: { email: String(email).trim() } });
     if (!user || !user.passwordHash) {
       return reply.code(401).send({ error: 'Invalid email or password' });
     }

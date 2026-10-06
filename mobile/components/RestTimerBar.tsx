@@ -43,7 +43,7 @@ export function RestTimerBar() {
     <Animated.View
       pointerEvents="box-none"
       style={containerStyle}
-      className="absolute left-4 right-4 bottom-6"
+      className="absolute left-4 right-4 bottom-28"
     >
       <View className="rounded-2xl overflow-hidden bg-fitso-surfaceAlt border border-fitso-border">
         <View className="h-1 w-full bg-fitso-border">

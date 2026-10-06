@@ -153,6 +153,37 @@ describe('finishWorkout (offline)', () => {
     expect(workoutInsert.params[8]).toBe(42);
   });
 
+  it('excludes paused time from the saved duration', async () => {
+    buildFifteenSetSession();
+    const startTime = store.getState().startTime as number;
+    // 40s wall clock: 10s in a finished pause + still paused at save time
+    // (paused 15s ago), so active time is 40 - 10 - 15 = 15s.
+    store.setState({
+      startTime,
+      pausedTotalMs: 10_000,
+      pausedAt: startTime + 25_000,
+    });
+    jest.spyOn(Date, 'now').mockReturnValue(startTime + 40_000);
+
+    await store.getState().finishWorkout();
+
+    const [workoutInsert] = insertsInto(db, WORKOUTS_TABLE);
+    expect(workoutInsert.params[8]).toBe(15);
+  });
+
+  it('tracks pause and resume via setPaused', () => {
+    store.getState().startWorkout();
+    const t0 = Date.now();
+    jest.spyOn(Date, 'now').mockReturnValue(t0 + 5_000);
+    store.getState().setPaused(true);
+    expect(store.getState().pausedAt).toBe(t0 + 5_000);
+
+    jest.spyOn(Date, 'now').mockReturnValue(t0 + 8_000);
+    store.getState().setPaused(false);
+    expect(store.getState().pausedAt).toBeNull();
+    expect(store.getState().pausedTotalMs).toBe(3_000);
+  });
+
   it('wipes the active session and its MMKV mirror after the write commits', async () => {
     buildFifteenSetSession();
     await store.getState().finishWorkout();

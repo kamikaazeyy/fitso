@@ -58,6 +58,9 @@ export class BackendConnector implements PowerSyncBackendConnector {
       this.syncTokenRequest = (async () => {
         const { data } = await client.post<{ token: string }>(
           '/api/auth/sync-token',
+          // Empty JSON object: a missing/null body makes axios default to
+          // Content-Type: application/x-www-form-urlencoded, which Fastify
+          // rejects with 415 before auth runs.
           {},
           { headers: { Authorization: `Bearer ${sessionToken}` } }
         );

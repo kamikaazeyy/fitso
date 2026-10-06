@@ -13,6 +13,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '@/context/AuthContext';
 import { colors } from '@/constants/theme';
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export function LoginScreen() {
   const { login, signup, continueAsGuest } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
@@ -22,16 +24,18 @@ export function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isValid = email.length > 0 && password.length >= 6;
+  const trimmedEmail = email.trim();
+  const emailInvalid = trimmedEmail.length > 0 && !EMAIL_RE.test(trimmedEmail);
+  const isValid = EMAIL_RE.test(trimmedEmail) && password.length >= 6;
 
   const handleSubmit = async () => {
     setError(null);
     setLoading(true);
     try {
       if (isLogin) {
-        await login(email, password);
+        await login(trimmedEmail, password);
       } else {
-        await signup(email, password, name);
+        await signup(trimmedEmail, password, name.trim() || undefined);
       }
     } catch (err: any) {
       const msg = err?.message || String(err);
@@ -102,6 +106,9 @@ export function LoginScreen() {
               autoCapitalize="none"
               autoCorrect={false}
             />
+            {emailInvalid && (
+              <Text className="text-[#E63946] text-xs mt-1.5">Enter a valid email address</Text>
+            )}
           </View>
 
           <View className="mb-5">

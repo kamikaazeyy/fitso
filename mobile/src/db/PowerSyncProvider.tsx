@@ -113,12 +113,13 @@ export async function connectPowerSync(token: string): Promise<void> {
 }
 
 /**
- * Call this on logout to disconnect sync and clear local data.
+ * Call this on logout to disconnect sync and clear local data — the next
+ * account on this device must not see the previous user's synced rows.
  */
 export async function disconnectPowerSync(): Promise<void> {
   const db = getPowerSyncDatabase();
   try {
-    await db.disconnect();
+    await db.disconnectAndClear();
   } catch {
     // ignore
   }
