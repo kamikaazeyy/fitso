@@ -26,11 +26,16 @@ export const MUSCLE_GROUP_COLORS: Record<MuscleGroup, string> = {
 export function muscleGroup(raw: string | null | undefined): MuscleGroup {
   const m = (raw ?? '').toLowerCase();
   if (/pect|chest/.test(m)) return 'Chest';
-  if (/latissim|trapez|erector|rhomboid|teres|infraspin|back|row/.test(m)) return 'Back';
+  if (/latissim|\blats?\b|trapez|traps|erector|rhomboid|teres|infraspin|back/.test(m)) return 'Back';
   if (/delt|shoulder/.test(m)) return 'Shoulders';
-  if (/bicep|tricep|brachial|forearm|arm/.test(m)) return 'Arms';
-  if (/quad|hamstring|glute|gastrocnem|soleus|calf|adduct|abduct|tibial|sartorius|leg/.test(m))
+  // Legs before Arms: "Biceps femoris" is a hamstring, not an arm muscle.
+  if (
+    /quad|hamstring|femoris|glute|gastrocnem|soleus|calf|calves|adduct|abduct|tibial|sartorius|leg/.test(
+      m
+    )
+  )
     return 'Legs';
+  if (/bicep|tricep|brachi|forearm|arm/.test(m)) return 'Arms';
   if (/abdomin|obliqu|serratus|transverse|core|abs/.test(m)) return 'Core';
   return 'Other';
 }
@@ -101,8 +106,10 @@ export function buildMuscleLoad(
     if (w.workoutType && w.workoutType !== 'STRENGTH') continue;
     for (const s of w.sets) {
       if (!s.completed) continue;
+      const volume = (Number(s.weightKg) || 0) * (Number(s.reps) || 0);
+      if (volume <= 0) continue;
       const group = lookup(s.exerciseName, s.wgerId);
-      totals.set(group, (totals.get(group) ?? 0) + s.weightKg * s.reps);
+      totals.set(group, (totals.get(group) ?? 0) + volume);
     }
   }
   const total = [...totals.values()].reduce((a, b) => a + b, 0);

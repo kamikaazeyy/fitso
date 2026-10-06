@@ -51,7 +51,7 @@ function dailySeries(
   for (const w of workouts) {
     const t = new Date(w.completedAt).getTime();
     if (t < start || t > end.getTime()) continue;
-    buckets[Math.floor((t - start) / dayMs)] += pick(w);
+    buckets[Math.min(days - 1, Math.floor((t - start) / dayMs))] += pick(w);
   }
   return buckets;
 }

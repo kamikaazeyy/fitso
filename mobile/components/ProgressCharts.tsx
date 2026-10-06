@@ -95,13 +95,15 @@ export function VolumeBarChart({ data }: { data: VolumePoint[] }) {
   const slot = data.length > 0 ? plotW / data.length : plotW;
   const barW = Math.min(28, slot * 0.55);
   const labelEvery = Math.max(1, Math.ceil(data.length / 5));
+  const hasData = data.some((d) => d.value > 0);
 
   return (
     <View>
       <Svg width={width} height={CHART_H}>
         <Gridlines width={width} ticks={ticks} />
-        <YAxisLabels ticks={ticks} min={0} max={max} />
+        {hasData && <YAxisLabels ticks={ticks} min={0} max={max} />}
         {data.map((d, i) => {
+          if (!(d.value > 0)) return null;
           const h = Math.max(2, (d.value / max) * plotH);
           const x = PAD_L + slot * i + (slot - barW) / 2;
           return (
@@ -131,7 +133,7 @@ export function VolumeBarChart({ data }: { data: VolumePoint[] }) {
           ) : null
         )}
       </Svg>
-      {data.length === 0 && <EmptyOverlay message="No sessions yet — finish a workout to see volume." />}
+      {!hasData && <EmptyOverlay message="No sessions yet — finish a workout to see volume." />}
     </View>
   );
 }
@@ -186,7 +188,7 @@ export function OverloadLineChart({
       )}
       <Svg width={width} height={CHART_H}>
         <Gridlines width={width} ticks={ticks} />
-        <YAxisLabels ticks={ticks} min={min} max={max} />
+        {hasData && <YAxisLabels ticks={ticks} min={min} max={max} />}
         {series.map((s) => {
           const pts = s.points
             .map((v, i) => (v === null ? null : `${xFor(i)},${yFor(v)}`))

@@ -82,22 +82,16 @@ export default function HomeScreen() {
     });
   }, [list, selectedDate]);
 
-  // Ring fills (0..1)
-  const loadFill =
-    today.avgWeekVolumeKg > 0
-      ? Math.min(1, today.weekVolumeKg / today.avgWeekVolumeKg)
-      : today.weekVolumeKg > 0
-      ? 1
-      : 0;
-  const todayFill =
-    today.medianSessionVolumeKg > 0
-      ? Math.min(1, today.todayVolumeKg / today.medianSessionVolumeKg)
-      : today.todayVolumeKg > 0
-      ? 1
-      : 0;
-
-  const loadPct = Math.round(loadFill * 100);
-  const todayPct = Math.round(todayFill * 100);
+  // Ring fills (0..1). Without a prior baseline there is nothing to compare
+  // against, so the ring stays empty and shows "—" rather than a fake 100%.
+  const hasWeekBaseline = today.avgWeekVolumeKg > 0;
+  const hasSessionBaseline = today.medianSessionVolumeKg > 0;
+  const loadRatio = hasWeekBaseline ? today.weekVolumeKg / today.avgWeekVolumeKg : 0;
+  const todayRatio = hasSessionBaseline
+    ? today.todayVolumeKg / today.medianSessionVolumeKg
+    : 0;
+  const loadFill = Math.min(1, loadRatio);
+  const todayFill = Math.min(1, todayRatio);
 
   const maxDaily = Math.max(0, ...today.dailyVolumes.map((d) => d.value));
   const headerLabel = isSelectedToday
@@ -165,16 +159,16 @@ export default function HomeScreen() {
               rings={[
                 {
                   fill: loadFill,
-                  value: `${loadPct}%`,
+                  value: hasWeekBaseline ? `${Math.round(loadRatio * 100)}%` : '—',
                   label: 'Load',
-                  sublabel: 'of typical week',
+                  sublabel: hasWeekBaseline ? 'of typical week' : 'no baseline yet',
                   color: '#E63946',
                 },
                 {
                   fill: todayFill,
-                  value: `${todayPct}%`,
+                  value: hasSessionBaseline ? `${Math.round(todayRatio * 100)}%` : '—',
                   label: isSelectedToday ? 'Today' : 'That day',
-                  sublabel: 'vs typical session',
+                  sublabel: hasSessionBaseline ? 'vs typical session' : 'no baseline yet',
                   color: '#00E5FF',
                 },
               ]}
@@ -206,7 +200,7 @@ export default function HomeScreen() {
             </Text>
             <View className="flex-row items-end h-16">
               {today.dailyVolumes.map((d, i) => {
-                const h = maxDaily > 0 ? Math.max(8, (d.value / maxDaily) * 56) : 8;
+                const h = d.value > 0 && maxDaily > 0 ? Math.max(4, (d.value / maxDaily) * 56) : 0;
                 return (
                   <View key={i} className="flex-1 items-center">
                     <View

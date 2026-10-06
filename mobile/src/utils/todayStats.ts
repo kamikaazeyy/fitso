@@ -18,9 +18,9 @@ export interface TodayStats {
   sessionsThisWeek: number;
   weeklyTarget: number;
   weekVolumeKg: number;
-  /** Average weekly volume over the trailing 28 days (kg). */
+  /** Average weekly volume over the 4 full weeks before the current one (kg); 0 = no baseline. */
   avgWeekVolumeKg: number;
-  /** Median per-session volume over the trailing 28 days (kg, strength only). */
+  /** Median per-session volume over the 28 days before today (kg, strength only); 0 = no baseline. */
   medianSessionVolumeKg: number;
   /** Consecutive weeks (counting current) with at least one session. */
   weekStreak: number;
@@ -43,7 +43,12 @@ export function computeTodayStats(
       asOf.getFullYear() === realNow.getFullYear() &&
       asOf.getMonth() === realNow.getMonth() &&
       asOf.getDate() === realNow.getDate();
-    now = isSameDay ? realNow : new Date(asOf.setHours(23, 59, 59, 999));
+    if (isSameDay) {
+      now = realNow;
+    } else {
+      now = new Date(asOf);
+      now.setHours(23, 59, 59, 999);
+    }
   }
   const weekStart = startOfWeekFor(now);
   const dayMs = 24 * 60 * 60 * 1000;
@@ -57,12 +62,20 @@ export function computeTodayStats(
   const last = sorted[0] ?? null;
 
   const thisWeek = sorted.filter((w) => new Date(w.completedAt) >= weekStart);
-  const trailing28 = sorted.filter(
-    (w) => now.getTime() - new Date(w.completedAt).getTime() < 28 * dayMs
-  );
-
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
+
+  // Baselines exclude the period being compared so a first session can't
+  // compare against itself and read as a fake 100%.
+  const baselineWeekStart = weekStart.getTime() - 28 * dayMs;
+  const priorFourWeeks = sorted.filter((w) => {
+    const t = new Date(w.completedAt).getTime();
+    return t >= baselineWeekStart && t < weekStart.getTime();
+  });
+  const prior28Days = sorted.filter((w) => {
+    const t = new Date(w.completedAt).getTime();
+    return t >= todayStart.getTime() - 28 * dayMs && t < todayStart.getTime();
+  });
   const todayWorkouts = thisWeek.filter((w) => new Date(w.completedAt) >= todayStart);
 
   // Weekly streak: walk backwards in 7-day windows starting from this week.
@@ -105,9 +118,9 @@ export function computeTodayStats(
     weeklyTarget: target,
     weekVolumeKg: thisWeek.reduce((sum, w) => sum + workoutVolume(w.sets), 0),
     avgWeekVolumeKg:
-      trailing28.reduce((sum, w) => sum + workoutVolume(w.sets), 0) / 4,
+      priorFourWeeks.reduce((sum, w) => sum + workoutVolume(w.sets), 0) / 4,
     medianSessionVolumeKg: (() => {
-      const vols = trailing28
+      const vols = prior28Days
         .filter((w) => !w.workoutType || w.workoutType === 'STRENGTH')
         .map((w) => workoutVolume(w.sets))
         .filter((v) => v > 0)

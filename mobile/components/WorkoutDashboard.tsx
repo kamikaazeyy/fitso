@@ -153,12 +153,13 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
     for (const w of workouts) {
       if (new Date(w.completedAt).getTime() < cutoff) continue;
       for (const s of w.sets) {
-        if (!s.completed) continue;
+        const volume = (Number(s.weightKg) || 0) * (Number(s.reps) || 0);
+        if (!s.completed || volume <= 0) continue;
         const muscle =
           (s.wgerId != null ? muscleByWger.get(s.wgerId) : undefined) ??
           muscleByName.get(s.exerciseName) ??
           'Other';
-        totals.set(muscle, (totals.get(muscle) ?? 0) + s.weightKg * s.reps);
+        totals.set(muscle, (totals.get(muscle) ?? 0) + volume);
       }
     }
     return [...totals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
