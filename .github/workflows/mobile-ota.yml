@@ -4,9 +4,11 @@ name: Mobile OTA Update
 # push to main that touches mobile/. Installed preview APKs pick it up on the
 # next cold start (checkAutomatically: ON_LOAD in mobile/app.json).
 #
-# Limitations: updates only reach binaries whose runtime fingerprint matches.
-# Native changes (new native deps, SDK bump, app.json native config) produce a
-# new fingerprint — those pushes still need a full `eas build` + reinstall.
+# Limitations: updates only reach binaries whose baked-in runtimeVersion
+# matches what is published. app.json pins runtimeVersion to a literal string
+# (the deployed APK's fingerprint) instead of the "fingerprint" policy so that
+# JS-only changes always reach installed builds — bump the literal whenever
+# native deps/app.json native config change and a new APK is produced.
 
 on:
   push:
@@ -43,6 +45,33 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Installed binaries only receive updates when their baked-in
+      # updates.url, channel, and runtimeVersion all match what is
+      # published. A missing/misconfigured updates block makes a binary
+      # permanently un-updatable, so fail the publish loudly instead of
+      # pushing an update no install can receive. runtimeVersion may be a
+      # "fingerprint" policy or a pinned literal string matching deployed APKs.
+      - name: Verify OTA config and log runtime fingerprint
+        run: |
+          node -e '
+            const c = require("./app.json").expo;
+            const pid = c.extra && c.extra.eas && c.extra.eas.projectId;
+            const url = c.updates && c.updates.url;
+            if (!pid) throw new Error("extra.eas.projectId missing from app.json");
+            if (url !== "https://u.expo.dev/" + pid)
+              throw new Error("updates.url is missing or does not match projectId: " + url);
+            if (c.updates.enabled !== true) throw new Error("updates.enabled is not true");
+            const rv = c.runtimeVersion;
+            const ok =
+              (typeof rv === "string" && rv.length > 0) ||
+              (rv && rv.policy === "fingerprint");
+            if (!ok)
+              throw new Error("runtimeVersion must be a literal string or fingerprint policy");
+            console.log("OTA config OK: " + url + " runtime=" + JSON.stringify(rv));
+          '
+          npx expo-updates fingerprint:generate --platform android \
+            | jq -r '"runtime fingerprint (android): " + .hash'
 
       - name: Publish OTA update to preview branch
         env:

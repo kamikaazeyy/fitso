@@ -6,6 +6,7 @@ interface DayItem {
   date: number;
   fullDate: Date;
   isToday: boolean;
+  isFuture: boolean;
 }
 
 interface DatePickerStripProps {
@@ -31,11 +32,16 @@ export function DatePickerStrip({ selectedDate, onSelectDate }: DatePickerStripP
       d.getDate() === now.getDate() &&
       d.getMonth() === now.getMonth() &&
       d.getFullYear() === now.getFullYear();
+    const dayStart = new Date(d);
+    dayStart.setHours(0, 0, 0, 0);
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
     days.push({
       label: DAYS[d.getDay()],
       date: d.getDate(),
       fullDate: d,
       isToday,
+      isFuture: dayStart.getTime() > todayStart.getTime(),
     });
   }
 
@@ -51,13 +57,14 @@ export function DatePickerStrip({ selectedDate, onSelectDate }: DatePickerStripP
         return (
           <TouchableOpacity
             key={day.label + day.date}
-            activeOpacity={0.7}
+            activeOpacity={day.isFuture ? 1 : 0.7}
+            disabled={day.isFuture}
             onPress={() => onSelectDate(day.fullDate)}
             className="items-center"
           >
             <Text
               className={`text-xs font-medium mb-2 ${
-                selected ? 'text-white' : 'text-[#A0A0A0]'
+                selected ? 'text-white' : day.isFuture ? 'text-[#3A3A3C]' : 'text-[#A0A0A0]'
               }`}
             >
               {day.label}
@@ -68,12 +75,20 @@ export function DatePickerStrip({ selectedDate, onSelectDate }: DatePickerStripP
                   ? 'border-white bg-black'
                   : day.isToday
                   ? 'border-[#E63946] bg-[#E63946]'
+                  : day.isFuture
+                  ? 'border-[#1C1C1E] bg-black'
                   : 'border-[#2C2C2E] bg-[#121212]'
               }`}
             >
               <Text
                 className={`text-sm font-bold ${
-                  selected ? 'text-white' : day.isToday ? 'text-white' : 'text-[#A0A0A0]'
+                  selected
+                    ? 'text-white'
+                    : day.isToday
+                    ? 'text-white'
+                    : day.isFuture
+                    ? 'text-[#3A3A3C]'
+                    : 'text-[#A0A0A0]'
                 }`}
               >
                 {day.date}
