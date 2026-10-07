@@ -16,7 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { WORKOUT_SETS_TABLE, WORKOUTS_TABLE } from '@/src/db/AppSchema';
 import { SET_TYPE_CYCLE, SET_TYPE_LABELS, type SetType, type CardioSplit } from '@/src/types/workout';
-import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { setVolume } from '@/src/utils/personalRecord';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight, formatWeight, parseWeightInput, type WeightUnit } from '@/src/utils/units';
 import { uuid } from '@/src/utils/id';
@@ -134,7 +134,7 @@ export default function WorkoutDetailScreen() {
 
   const [workout, setWorkout] = useState<WorkoutRow | null>(null);
   const [groups, setGroups] = useState<ExerciseGroup[]>([]);
-  // All-time best e1RM per exercise across OTHER workouts — PR baseline.
+  // All-time best set volume per exercise across OTHER workouts — PR baseline.
   const [priorBests, setPriorBests] = useState<Map<string, number>>(new Map());
   const [deletedSetIds, setDeletedSetIds] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState('');
@@ -169,7 +169,7 @@ export default function WorkoutDetailScreen() {
           [workoutId]
         );
 
-        // PR baseline: best e1RM of completed NORMAL sets in workouts that
+        // PR baseline: best volume (weight × reps) of completed NORMAL sets in workouts that
         // finished before this one started — a set only counts as a PR if it
         // beat history at the time it was logged.
         const priorResult = await db.execute(
@@ -187,9 +187,9 @@ export default function WorkoutDetailScreen() {
           weight: number | null;
           reps: number | null;
         }>(priorResult)) {
-          const e1rm = estimateOneRepMax(prior.weight, prior.reps);
-          if (e1rm !== null && e1rm > (bests.get(prior.exercise_name) ?? 0)) {
-            bests.set(prior.exercise_name, e1rm);
+          const volume = setVolume(prior.weight, prior.reps);
+          if (volume !== null && volume > (bests.get(prior.exercise_name) ?? 0)) {
+            bests.set(prior.exercise_name, volume);
           }
         }
 
@@ -212,7 +212,7 @@ export default function WorkoutDetailScreen() {
     };
   }, [workoutId, db, unit]);
 
-  // A set is a PR when its e1RM beats every completed NORMAL set that came
+  // A set is a PR when its volume beats every completed NORMAL set that came
   // before it — history (priorBests) plus earlier sets in this workout — the
   // same definition the in-workout badge uses.
   const prSetIds = useMemo(() => {
@@ -221,14 +221,14 @@ export default function WorkoutDetailScreen() {
     for (const group of groups) {
       for (const set of group.sets) {
         if (!set.isCompleted || set.setType !== 'NORMAL') continue;
-        const e1rm = estimateOneRepMax(
+        const volume = setVolume(
           parseWeightInput(set.weight, unit),
           parseInt(set.reps, 10) || null
         );
-        if (e1rm === null) continue;
+        if (volume === null) continue;
         const best = Math.max(priorBests.get(group.name) ?? 0, running.get(group.name) ?? 0);
-        if (e1rm > best) flagged.add(set.id);
-        running.set(group.name, Math.max(running.get(group.name) ?? 0, e1rm));
+        if (volume > best) flagged.add(set.id);
+        running.set(group.name, Math.max(running.get(group.name) ?? 0, volume));
       }
     }
     return flagged;

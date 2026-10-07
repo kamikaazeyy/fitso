@@ -8,7 +8,7 @@ import { useQuery } from '@powersync/react-native';
 import { CUSTOM_EXERCISES_TABLE, EXERCISE_CACHE_TABLE } from '@/src/db/AppSchema';
 import type { LoadableStatus } from '@/hooks/useLoadableData';
 import type { WorkoutWithSets } from '@/src/hooks/useWorkouts';
-import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { setVolume } from '@/src/utils/personalRecord';
 import { buildOverloadSeries, workoutReps, workoutVolume } from '@/src/utils/trainingStats';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight } from '@/src/utils/units';
@@ -68,20 +68,20 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
     const totalReps = workouts.reduce((sum, w) => sum + workoutReps(w.sets), 0);
     const totalDuration = workouts.reduce((sum, w) => sum + (w.durationSeconds || 0), 0);
 
-    // PR = all-time best estimated 1RM on a completed NORMAL set — the same
-    // definition the in-workout PR badge and workout-detail use.
-    const exerciseBestSet: Record<string, { weightKg: number; reps: number; e1rm: number }> = {};
+    // PR = all-time best set volume (weight × reps) on a completed NORMAL
+    // set — the same definition the in-workout PR badge and workout-detail use.
+    const exerciseBestSet: Record<string, { weightKg: number; reps: number; volume: number }> = {};
 
     for (const w of workouts) {
       for (const s of w.sets) {
         if (!s.completed || s.setType !== 'NORMAL') continue;
         const weightKg = Number(s.weightKg) || 0;
         const reps = Number(s.reps) || 0;
-        const e1rm = estimateOneRepMax(weightKg, reps);
-        if (e1rm === null) continue;
+        const volume = setVolume(weightKg, reps);
+        if (volume === null) continue;
         const best = exerciseBestSet[s.exerciseName];
-        if (!best || e1rm > best.e1rm) {
-          exerciseBestSet[s.exerciseName] = { weightKg, reps, e1rm };
+        if (!best || volume > best.volume) {
+          exerciseBestSet[s.exerciseName] = { weightKg, reps, volume };
         }
       }
     }
@@ -91,9 +91,9 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
         exerciseName,
         weightKg: set.weightKg,
         reps: set.reps,
-        e1rm: set.e1rm,
+        volume: set.volume,
       }))
-      .sort((a, b) => b.e1rm - a.e1rm);
+      .sort((a, b) => b.volume - a.volume);
 
     return { totalWorkouts, totalVolume, totalReps, totalDuration, personalRecords };
   }, [workouts]);
@@ -286,7 +286,7 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
                 <View className="flex-1 pr-2">
                   <Text className="text-white font-semibold" numberOfLines={1}>{pr.exerciseName}</Text>
                   <Text className="text-[#A0A0A0] text-xs">
-                    Est. 1RM {formatNumber(displayWeight(pr.e1rm, unit) ?? 0)} {unit}
+                    Volume {formatNumber(displayWeight(pr.volume, unit) ?? 0)} {unit}
                   </Text>
                 </View>
                 <View className="bg-[#E63946] rounded-xl px-3 py-1.5">

@@ -186,7 +186,7 @@ describe('toggleSetComplete', () => {
   });
 });
 
-describe('Brzycki 1RM and PR detection', () => {
+describe('Brzycki 1RM and volume PR detection', () => {
   it('computes weight * (36 / (37 - reps))', () => {
     expect(estimateOneRepMax(100, 8)).toBeCloseTo(124.1379, 4);
     expect(estimateOneRepMax(100, 1)).toBeCloseTo(100, 6);
@@ -201,30 +201,45 @@ describe('Brzycki 1RM and PR detection', () => {
     expect(estimateOneRepMax(0, 5)).toBeNull();
   });
 
-  it('flags a PR only when the estimate beats the session best', () => {
+  it('flags a PR only when the set volume beats the session best', () => {
     store.getState().startWorkout(PUSH_DAY);
-    logSet(store, BENCH.exerciseId, 0, 100, 8);
-
+    logSet(store, BENCH.exerciseId, 0, 100, 8); // 800
     expect(store.getState().exercises[0].sets[0]).toMatchObject({ isPersonalRecord: true });
 
-    logSet(store, BENCH.exerciseId, 1, 90, 8);
+    logSet(store, BENCH.exerciseId, 1, 90, 8); // 720
     expect(store.getState().exercises[0].sets[1].isPersonalRecord).toBe(false);
 
-    logSet(store, BENCH.exerciseId, 2, 110, 8);
+    logSet(store, BENCH.exerciseId, 2, 110, 8); // 880
     expect(store.getState().exercises[0].sets[2].isPersonalRecord).toBe(true);
   });
 
+  it('does not flag a heavier set whose volume is lower', () => {
+    store.getState().startWorkout(PUSH_DAY);
+    logSet(store, BENCH.exerciseId, 0, 20, 12); // 240
+    // 25x8 = 200 < 240 even though its e1RM (31.0) beats 20x12 (28.8).
+    logSet(store, BENCH.exerciseId, 1, 25, 8);
+    expect(store.getState().exercises[0].sets[1].isPersonalRecord).toBe(false);
+
+    logSet(store, BENCH.exerciseId, 2, 25, 10); // 250 > 240
+    expect(store.getState().exercises[0].sets[2].isPersonalRecord).toBe(true);
+  });
+
+  it('does not flag a set that only ties the best volume', () => {
+    store.getState().startWorkout(PUSH_DAY);
+    logSet(store, BENCH.exerciseId, 0, 100, 8); // 800
+    logSet(store, BENCH.exerciseId, 1, 80, 10); // 800
+    expect(store.getState().exercises[0].sets[1].isPersonalRecord).toBe(false);
+  });
+
   it('only flags a set when it beats the hydrated history baseline', () => {
-    // personalRecords is keyed by exercise name and represents saved history.
-    store.setState({ personalRecords: { 'Bench Press': 130 } });
+    // personalRecords is keyed by exercise name: best saved set volume.
+    store.setState({ personalRecords: { 'Bench Press': 850 } });
     store.getState().startWorkout(PUSH_DAY);
 
-    // 100x8 -> e1RM 124.1 < 130 baseline: no PR.
-    logSet(store, BENCH.exerciseId, 0, 100, 8);
+    logSet(store, BENCH.exerciseId, 0, 100, 8); // 800 < 850
     expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(false);
 
-    // 110x8 -> e1RM 136.6 > 130 baseline: PR.
-    logSet(store, BENCH.exerciseId, 1, 110, 8);
+    logSet(store, BENCH.exerciseId, 1, 110, 8); // 880 > 850
     expect(store.getState().exercises[0].sets[1].isPersonalRecord).toBe(true);
   });
 
@@ -238,19 +253,16 @@ describe('Brzycki 1RM and PR detection', () => {
   });
 
   it('recomputes the PR flag when a completed set is edited', () => {
-    store.setState({ personalRecords: { 'Bench Press': 110 } });
+    store.setState({ personalRecords: { 'Bench Press': 700 } });
     store.getState().startWorkout(PUSH_DAY);
     const setId = store.getState().exercises[0].sets[0].id;
-    logSet(store, BENCH.exerciseId, 0, 100, 8); // e1RM 124.1 > 110
+    logSet(store, BENCH.exerciseId, 0, 100, 8); // 800 > 700
     expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(true);
 
-    // Editing reps down drops the e1RM below the baseline — flag must be
-    // recomputed, not stale.
-    store.getState().updateSet(BENCH.exerciseId, setId, 'reps', '1'); // e1RM 100 < 110
+    store.getState().updateSet(BENCH.exerciseId, setId, 'reps', '1'); // 100 < 700
     expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(false);
 
-    // Editing back up restores it.
-    store.getState().updateSet(BENCH.exerciseId, setId, 'reps', '20'); // e1RM 211.8 > 110
+    store.getState().updateSet(BENCH.exerciseId, setId, 'reps', '20'); // 2000 > 700
     expect(store.getState().exercises[0].sets[0].isPersonalRecord).toBe(true);
   });
 

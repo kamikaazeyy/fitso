@@ -25,6 +25,7 @@ import {
 } from '@/src/types/workout';
 import { uuid } from '@/src/utils/id';
 import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { setVolume } from '@/src/utils/personalRecord';
 import { computeRoutineUpdate } from '@/src/utils/routineSync';
 import { extractRows } from '@/src/db/queryHelper';
 
@@ -141,19 +142,20 @@ function isSetEmpty(set: ActiveSet): boolean {
 
 /**
  * Recomputes `estimatedOneRepMax` and `isPersonalRecord` for a whole exercise.
- * A completed NORMAL set earns the PR flag when its e1RM beats every NORMAL
- * set that came before it — the all-time history baseline plus the earlier
- * completed sets of this session. Warmup/drop/failure sets can never be PRs,
+ * A completed NORMAL set earns the PR flag when its volume (weight × reps)
+ * beats every NORMAL set that came before it — the all-time history baseline
+ * plus the earlier completed sets of this session. Warmup/drop/failure sets can never be PRs,
  * and un-completing or editing a set flips the flag back off.
  */
 function computePRFlags(sets: ActiveSet[], historyBaseline: number): ActiveSet[] {
   let running = historyBaseline;
   return sets.map((set) => {
     const e1rm = set.isCompleted ? estimateOneRepMax(set.weight, set.reps) : null;
+    const volume = set.isCompleted ? setVolume(set.weight, set.reps) : null;
     const isPersonalRecord =
-      set.isCompleted && set.setType === 'NORMAL' && e1rm !== null && e1rm > running;
-    if (set.isCompleted && set.setType === 'NORMAL' && e1rm !== null) {
-      running = Math.max(running, e1rm);
+      set.isCompleted && set.setType === 'NORMAL' && volume !== null && volume > running;
+    if (set.isCompleted && set.setType === 'NORMAL' && volume !== null) {
+      running = Math.max(running, volume);
     }
     if (set.estimatedOneRepMax === e1rm && set.isPersonalRecord === isPersonalRecord) return set;
     return { ...set, estimatedOneRepMax: e1rm, isPersonalRecord };
@@ -227,9 +229,9 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
             weight: number | null;
             reps: number | null;
           }[]) {
-            const e1rm = estimateOneRepMax(row.weight, row.reps);
-            if (e1rm !== null && e1rm > (records[row.exercise_name] ?? 0)) {
-              records[row.exercise_name] = e1rm;
+            const volume = setVolume(row.weight, row.reps);
+            if (volume !== null && volume > (records[row.exercise_name] ?? 0)) {
+              records[row.exercise_name] = volume;
             }
           }
           // Re-flag already-completed sets against the fresh baseline —
