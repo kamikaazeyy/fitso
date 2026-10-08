@@ -1,5 +1,5 @@
 import type { WorkoutWithSets } from '@/src/hooks/useWorkouts';
-import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { setE1rm } from '@/src/utils/unilateralStats';
 
 export interface ProgressionRow {
   exerciseName: string;
@@ -36,7 +36,8 @@ export function buildStrengthProgression(
     const best = new Map<string, number>();
     for (const s of w.sets) {
       if (!s.completed || s.setType !== 'NORMAL') continue;
-      const e1rm = estimateOneRepMax(Number(s.weightKg) || 0, Number(s.reps) || 0);
+      // Weaker-side estimate for unilateral sets (see unilateralStats).
+      const e1rm = setE1rm(s);
       if (e1rm === null) continue;
       const cur = best.get(s.exerciseName);
       if (cur === undefined || e1rm > cur) best.set(s.exerciseName, e1rm);

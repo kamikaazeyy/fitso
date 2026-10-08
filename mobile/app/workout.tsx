@@ -25,7 +25,8 @@ import { usePowerSync } from '@powersync/react-native';
 import { PlateCalculatorModal } from '@/components/PlateCalculatorModal';
 import { displayWeight, parseWeightInput, type WeightUnit } from '@/src/utils/units';
 import { extractRows, extractFirstRow } from '@/src/db/queryHelper';
-import type { ActiveExercise, Routine } from '@/src/types/workout';
+import type { ActiveExercise, ExecutionMode, Routine } from '@/src/types/workout';
+import { supportsUnilateral } from '@/src/utils/exerciseHeuristics';
 
 function formatTime(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -66,7 +67,9 @@ function usePreviousSetHints(exercises: ActiveExercise[], unit: WeightUnit) {
           // identical for every set in a workout) so hints come from the most
           // recent session that trained this exercise.
           const result = await db.execute(
-            `SELECT ws.weight, ws.reps, ws.set_number
+            `SELECT ws.weight, ws.reps, ws.set_number,
+                    ws.weight_left, ws.weight_right, ws.reps_left, ws.reps_right,
+                    ws.execution_mode
              FROM ${WORKOUT_SETS_TABLE} ws
              JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
              WHERE ws.exercise_name = ?
@@ -79,8 +82,19 @@ function usePreviousSetHints(exercises: ActiveExercise[], unit: WeightUnit) {
           for (const row of rows) {
             const key = `${ex.exerciseId}-${row.set_number}`;
             if (!newHints[key]) {
-              const shown = row.weight != null ? displayWeight(row.weight, unit) : null;
-              newHints[key] = `${shown ?? '—'}${unit} × ${row.reps ?? '—'}`;
+              if (row.execution_mode === 'UNILATERAL') {
+                // Stack per-side history so the gap is visible while logging.
+                const wl = row.weight_left ?? row.weight;
+                const wr = row.weight_right ?? row.weight;
+                const shownL = wl != null ? displayWeight(wl, unit) : null;
+                const shownR = wr != null ? displayWeight(wr, unit) : null;
+                newHints[key] =
+                  `L: ${shownL ?? '—'}${unit} × ${row.reps_left ?? '—'}\n` +
+                  `R: ${shownR ?? '—'}${unit} × ${row.reps_right ?? '—'}`;
+              } else {
+                const shown = row.weight != null ? displayWeight(row.weight, unit) : null;
+                newHints[key] = `${shown ?? '—'}${unit} × ${row.reps ?? '—'}`;
+              }
             }
           }
         } catch {
@@ -122,6 +136,7 @@ export default function WorkoutScreen() {
   const cycleSetTypeInStore = useWorkoutSessionStore((s) => s.cycleSetType);
   const toggleSetCompleteInStore = useWorkoutSessionStore((s) => s.toggleSetComplete);
   const setAttachmentInStore = useWorkoutSessionStore((s) => s.setAttachment);
+  const setExecutionModeInStore = useWorkoutSessionStore((s) => s.setExecutionMode);
   const finishWorkout = useWorkoutSessionStore((s) => s.finishWorkout);
   const discardWorkout = useWorkoutSessionStore((s) => s.discardWorkout);
   const setSplitIdInStore = useWorkoutSessionStore((s) => s.setSplitId);
@@ -490,6 +505,40 @@ export default function WorkoutScreen() {
                       </TouchableOpacity>
                     )}
 
+                    {/* Bilateral / Unilateral mode toggle — only shown when
+                        the equipment heuristic allows per-side logging. */}
+                    {supportsUnilateral(exercise.equipment ?? [], exercise.attachment) && (
+                      <View
+                        className="flex-row self-start rounded-xl bg-[#1C1C1E] p-1 mb-3"
+                        accessibilityLabel={`execution-mode-${exercise.exerciseId}`}
+                      >
+                        {(['BILATERAL', 'UNILATERAL'] as const).map((mode) => {
+                          const active = (exercise.executionMode ?? 'BILATERAL') === mode;
+                          return (
+                            <TouchableOpacity
+                              key={mode}
+                              activeOpacity={0.8}
+                              accessibilityLabel={`mode-${mode.toLowerCase()}-${exercise.exerciseId}`}
+                              onPress={() =>
+                                setExecutionModeInStore(exercise.exerciseId, mode as ExecutionMode)
+                              }
+                              className={`px-3 py-1.5 rounded-lg ${active ? 'bg-[#E63946]' : ''}`}
+                            >
+                              <Text
+                                className={
+                                  active
+                                    ? 'text-white text-xs font-bold'
+                                    : 'text-[#A0A0A0] text-xs font-semibold'
+                                }
+                              >
+                                {mode === 'BILATERAL' ? 'Bilateral' : 'Unilateral'}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    )}
+
                     {/* Column Headers */}
                     <View className="flex-row items-center mb-3 px-1">
                       <Text className="text-[#A0A0A0] text-xs font-semibold w-10">Set</Text>
@@ -497,7 +546,9 @@ export default function WorkoutScreen() {
                       <Text className="text-[#A0A0A0] text-xs font-semibold w-14 text-center">
                         {weightUnit}
                       </Text>
-                      <Text className="text-[#A0A0A0] text-xs font-semibold w-14 text-center">Reps</Text>
+                      <Text className="text-[#A0A0A0] text-xs font-semibold w-14 text-center">
+                        {(exercise.executionMode ?? 'BILATERAL') === 'UNILATERAL' ? 'L / R' : 'Reps'}
+                      </Text>
                       <Text className="text-[#A0A0A0] text-xs font-semibold w-11 text-center">RPE</Text>
                       <View className="w-10 items-center">
                         <Ionicons name="checkmark" size={14} color="#A0A0A0" />
@@ -527,6 +578,7 @@ export default function WorkoutScreen() {
                           <SetRow
                             set={set}
                             unit={weightUnit}
+                            unilateral={set.executionMode === 'UNILATERAL'}
                             hint={hint}
                             onChangeWeight={(val) =>
                               updateSetInStore(
@@ -538,6 +590,12 @@ export default function WorkoutScreen() {
                             }
                             onChangeReps={(val) =>
                               updateSetInStore(exercise.exerciseId, set.id, 'reps', val)
+                            }
+                            onChangeRepsLeft={(val) =>
+                              updateSetInStore(exercise.exerciseId, set.id, 'repsLeft', val)
+                            }
+                            onChangeRepsRight={(val) =>
+                              updateSetInStore(exercise.exerciseId, set.id, 'repsRight', val)
                             }
                             onChangeRpe={(val) =>
                               updateSetInStore(exercise.exerciseId, set.id, 'rpe', val)

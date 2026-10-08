@@ -20,8 +20,12 @@ const SET_TYPE_COLORS: Record<SetType, string> = {
 export interface SetRowProps {
   set: ActiveSet;
   unit?: WeightUnit;
+  /** Renders the split L/R reps inputs instead of the single reps field. */
+  unilateral?: boolean;
   onChangeWeight: (value: string) => void;
   onChangeReps: (value: string) => void;
+  onChangeRepsLeft?: (value: string) => void;
+  onChangeRepsRight?: (value: string) => void;
   onChangeRpe: (value: string) => void;
   onCycleSetType: () => void;
   onToggleComplete: () => void;
@@ -44,8 +48,11 @@ function formatGhost(
 export function SetRow({
   set,
   unit = 'kg',
+  unilateral = false,
   onChangeWeight,
   onChangeReps,
+  onChangeRepsLeft,
+  onChangeRepsRight,
   onChangeRpe,
   onCycleSetType,
   onToggleComplete,
@@ -121,16 +128,42 @@ export function SetRow({
         className="w-14 h-10 bg-fitso-surface rounded-lg text-white text-center text-sm font-semibold mr-2 px-1"
       />
 
-      <TextInput
-        key={`reps-${set.previousReps ?? 'none'}`}
-        accessibilityLabel={`reps-${set.setIndex}`}
-        value={set.reps === null ? '' : String(set.reps)}
-        onChangeText={onChangeReps}
-        keyboardType="number-pad"
-        placeholder={set.previousReps !== undefined ? String(set.previousReps) : '—'}
-        placeholderTextColor="#555"
-        className="w-14 h-10 bg-fitso-surface rounded-lg text-white text-center text-sm font-semibold mr-2 px-1"
-      />
+      {unilateral ? (
+        // Per-side reps: two compact inputs sharing the reps column width.
+        <View className="flex-row mr-2">
+          <TextInput
+            key={`repsL-${set.previousRepsLeft ?? 'none'}`}
+            accessibilityLabel={`reps-left-${set.setIndex}`}
+            value={set.repsLeft === null ? '' : String(set.repsLeft)}
+            onChangeText={onChangeRepsLeft}
+            keyboardType="number-pad"
+            placeholder={set.previousRepsLeft !== undefined ? String(set.previousRepsLeft) : 'L'}
+            placeholderTextColor="#555"
+            className="w-10 h-10 bg-fitso-surface rounded-lg text-white text-center text-sm font-semibold mr-1 px-1"
+          />
+          <TextInput
+            key={`repsR-${set.previousRepsRight ?? 'none'}`}
+            accessibilityLabel={`reps-right-${set.setIndex}`}
+            value={set.repsRight === null ? '' : String(set.repsRight)}
+            onChangeText={onChangeRepsRight}
+            keyboardType="number-pad"
+            placeholder={set.previousRepsRight !== undefined ? String(set.previousRepsRight) : 'R'}
+            placeholderTextColor="#555"
+            className="w-10 h-10 bg-fitso-surface rounded-lg text-white text-center text-sm font-semibold px-1"
+          />
+        </View>
+      ) : (
+        <TextInput
+          key={`reps-${set.previousReps ?? 'none'}`}
+          accessibilityLabel={`reps-${set.setIndex}`}
+          value={set.reps === null ? '' : String(set.reps)}
+          onChangeText={onChangeReps}
+          keyboardType="number-pad"
+          placeholder={set.previousReps !== undefined ? String(set.previousReps) : '—'}
+          placeholderTextColor="#555"
+          className="w-14 h-10 bg-fitso-surface rounded-lg text-white text-center text-sm font-semibold mr-2 px-1"
+        />
+      )}
 
       <TextInput
         accessibilityLabel={`rpe-${set.setIndex}`}

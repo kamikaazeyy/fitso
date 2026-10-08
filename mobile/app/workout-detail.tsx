@@ -16,7 +16,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { WORKOUT_SETS_TABLE, WORKOUTS_TABLE } from '@/src/db/AppSchema';
 import { SET_TYPE_CYCLE, SET_TYPE_LABELS, type SetType, type CardioSplit } from '@/src/types/workout';
-import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { estimateOneRepMax, estimateUnilateralOneRepMax } from '@/src/utils/oneRepMax';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight, formatWeight, parseWeightInput, type WeightUnit } from '@/src/utils/units';
 import { uuid } from '@/src/utils/id';
@@ -40,6 +40,12 @@ interface SetDraft {
   setType: SetType;
   weight: string;
   reps: string;
+  /** Raw per-side values for unilateral sets — used for weaker-side e1RM. */
+  executionMode: string;
+  weightLeft: number | null;
+  weightRight: number | null;
+  repsLeft: number | null;
+  repsRight: number | null;
   rpe: string;
   isCompleted: boolean;
   isNew: boolean;
@@ -117,7 +123,17 @@ function groupSets(rows: Record<string, unknown>[], unit: WeightUnit): ExerciseG
         row.weight !== null && row.weight !== undefined
           ? String(displayWeight(Number(row.weight), unit) ?? row.weight)
           : '',
-      reps: row.reps !== null && row.reps !== undefined ? String(row.reps) : '',
+      reps:
+        row.execution_mode === 'UNILATERAL'
+          ? `${row.reps_left ?? '—'}L · ${row.reps_right ?? '—'}R`
+          : row.reps !== null && row.reps !== undefined
+            ? String(row.reps)
+            : '',
+      executionMode: (row.execution_mode as string) ?? 'BILATERAL',
+      weightLeft: (row.weight_left as number | null) ?? null,
+      weightRight: (row.weight_right as number | null) ?? null,
+      repsLeft: (row.reps_left as number | null) ?? null,
+      repsRight: (row.reps_right as number | null) ?? null,
       rpe: row.rpe !== null && row.rpe !== undefined ? String(row.rpe) : '',
       isCompleted: row.is_completed === 1,
       isNew: false,
@@ -173,7 +189,9 @@ export default function WorkoutDetailScreen() {
         // finished before this one started — a set only counts as a PR if it
         // beat history at the time it was logged.
         const priorResult = await db.execute(
-          `SELECT ws.exercise_name, ws.weight, ws.reps
+          `SELECT ws.exercise_name, ws.weight, ws.reps,
+                  ws.weight_left, ws.weight_right, ws.reps_left, ws.reps_right,
+                  ws.execution_mode
            FROM ${WORKOUT_SETS_TABLE} ws
            JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
            WHERE ws.workout_id != ? AND ws.is_completed = 1
@@ -186,8 +204,20 @@ export default function WorkoutDetailScreen() {
           exercise_name: string;
           weight: number | null;
           reps: number | null;
+          weight_left: number | null;
+          weight_right: number | null;
+          reps_left: number | null;
+          reps_right: number | null;
+          execution_mode: string | null;
         }>(priorResult)) {
-          const e1rm = estimateOneRepMax(prior.weight, prior.reps);
+          const e1rm =
+            prior.execution_mode === 'UNILATERAL'
+              ? estimateUnilateralOneRepMax(
+                  prior.weight_left ?? prior.weight_right ?? prior.weight,
+                  prior.reps_left,
+                  prior.reps_right
+                )
+              : estimateOneRepMax(prior.weight, prior.reps);
           if (e1rm !== null && e1rm > (bests.get(prior.exercise_name) ?? 0)) {
             bests.set(prior.exercise_name, e1rm);
           }
@@ -221,10 +251,19 @@ export default function WorkoutDetailScreen() {
     for (const group of groups) {
       for (const set of group.sets) {
         if (!set.isCompleted || set.setType !== 'NORMAL') continue;
-        const e1rm = estimateOneRepMax(
-          parseWeightInput(set.weight, unit),
-          parseInt(set.reps, 10) || null
-        );
+        // Unilateral rows estimate off the weaker side — `reps` on the draft
+        // is a display string ("8L · 12R") so parse it only for bilateral.
+        const e1rm =
+          set.executionMode === 'UNILATERAL'
+            ? estimateUnilateralOneRepMax(
+                parseWeightInput(set.weight, unit),
+                set.repsLeft,
+                set.repsRight
+              )
+            : estimateOneRepMax(
+                parseWeightInput(set.weight, unit),
+                parseInt(set.reps, 10) || null
+              );
         if (e1rm === null) continue;
         const best = Math.max(priorBests.get(group.name) ?? 0, running.get(group.name) ?? 0);
         if (e1rm > best) flagged.add(set.id);
@@ -277,6 +316,11 @@ export default function WorkoutDetailScreen() {
               setType: 'NORMAL' as SetType,
               weight: '',
               reps: '',
+              executionMode: 'BILATERAL',
+              weightLeft: null,
+              weightRight: null,
+              repsLeft: null,
+              repsRight: null,
               rpe: '',
               isCompleted: false,
               isNew: true,

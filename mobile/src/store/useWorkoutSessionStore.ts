@@ -20,11 +20,12 @@ import {
   type ActiveRestTimer,
   type ActiveSet,
   type Exercise,
+  type ExecutionMode,
   type Routine,
   type SetType,
 } from '@/src/types/workout';
 import { uuid } from '@/src/utils/id';
-import { estimateOneRepMax } from '@/src/utils/oneRepMax';
+import { estimateOneRepMax, estimateUnilateralOneRepMax } from '@/src/utils/oneRepMax';
 import { computeRoutineUpdate } from '@/src/utils/routineSync';
 import { extractRows } from '@/src/db/queryHelper';
 
@@ -36,7 +37,16 @@ function defaultRestSeconds(): number {
   return useSettingsStore.getState().defaultRestSeconds ?? DEFAULT_REST_SECONDS;
 }
 
-export type SetField = 'weight' | 'reps' | 'rpe' | 'setType';
+export type SetField =
+  | 'weight'
+  | 'reps'
+  | 'weightLeft'
+  | 'weightRight'
+  | 'repsLeft'
+  | 'repsRight'
+  | 'rpe'
+  | 'setType'
+  | 'executionMode';
 
 export interface WorkoutSessionState {
   isActive: boolean;
@@ -77,6 +87,10 @@ export interface WorkoutSessionActions {
   addSet: (exerciseId: string) => void;
   removeSet: (exerciseId: string, setId: string) => void;
   updateSet: (exerciseId: string, setId: string, field: SetField, value: unknown) => void;
+  /** Flips the whole exercise card between bilateral and per-side logging and
+   * cascades the mode onto every set (converting entered values where
+   * possible) so completed sets keep the mode they were logged in. */
+  setExecutionMode: (exerciseId: string, mode: ExecutionMode) => void;
   cycleSetType: (exerciseId: string, setId: string) => void;
   setAttachment: (exerciseId: string, attachment: string) => void;
   toggleSetComplete: (exerciseId: string, setId: string) => void;
@@ -110,16 +124,24 @@ const initialState: WorkoutSessionState = {
 };
 
 function blankSet(setIndex: number, previous?: ActiveSet): ActiveSet {
+  const unilateral = previous?.executionMode === 'UNILATERAL';
   return {
     id: uuid(),
     setIndex,
     setType: 'NORMAL',
+    executionMode: previous?.executionMode ?? 'BILATERAL',
     weight: null,
     reps: null,
+    weightLeft: null,
+    weightRight: null,
+    repsLeft: null,
+    repsRight: null,
     rpe: null,
     isCompleted: false,
     previousWeight: previous?.weight ?? previous?.previousWeight ?? undefined,
     previousReps: previous?.reps ?? previous?.previousReps ?? undefined,
+    previousRepsLeft: unilateral ? previous?.repsLeft ?? previous?.previousRepsLeft : undefined,
+    previousRepsRight: unilateral ? previous?.repsRight ?? previous?.previousRepsRight : undefined,
   };
 }
 
@@ -136,7 +158,15 @@ function mapExercise(
 }
 
 function isSetEmpty(set: ActiveSet): boolean {
-  return !set.isCompleted && set.weight === null && set.reps === null;
+  return (
+    !set.isCompleted &&
+    set.weight === null &&
+    set.reps === null &&
+    set.weightLeft === null &&
+    set.weightRight === null &&
+    set.repsLeft === null &&
+    set.repsRight === null
+  );
 }
 
 /**
@@ -149,7 +179,13 @@ function isSetEmpty(set: ActiveSet): boolean {
 function computePRFlags(sets: ActiveSet[], historyBaseline: number): ActiveSet[] {
   let running = historyBaseline;
   return sets.map((set) => {
-    const e1rm = set.isCompleted ? estimateOneRepMax(set.weight, set.reps) : null;
+    // Unilateral sets estimate off the weaker side only — averaging L/R would
+    // let a strong side inflate strength metrics.
+    const e1rm = set.isCompleted
+      ? set.executionMode === 'UNILATERAL'
+        ? estimateUnilateralOneRepMax(set.weight, set.repsLeft, set.repsRight)
+        : estimateOneRepMax(set.weight, set.reps)
+      : null;
     const isPersonalRecord =
       set.isCompleted && set.setType === 'NORMAL' && e1rm !== null && e1rm > running;
     if (set.isCompleted && set.setType === 'NORMAL' && e1rm !== null) {
@@ -176,7 +212,15 @@ export function activeElapsedMs(
  */
 function propagateGhostValues(sets: ActiveSet[], completedIndex: number): ActiveSet[] {
   const source = sets[completedIndex];
-  if (!source || (source.weight === null && source.reps === null)) return sets;
+  if (
+    !source ||
+    (source.weight === null &&
+      source.reps === null &&
+      source.repsLeft === null &&
+      source.repsRight === null)
+  ) {
+    return sets;
+  }
 
   return sets.map((set, index) => {
     if (index <= completedIndex || !isSetEmpty(set)) return set;
@@ -184,6 +228,8 @@ function propagateGhostValues(sets: ActiveSet[], completedIndex: number): Active
       ...set,
       previousWeight: source.weight ?? set.previousWeight,
       previousReps: source.reps ?? set.previousReps,
+      previousRepsLeft: source.repsLeft ?? set.previousRepsLeft,
+      previousRepsRight: source.repsRight ?? set.previousRepsRight,
     };
   });
 }
@@ -213,7 +259,9 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
         try {
           const db = getPowerSyncDatabase();
           const result = await db.execute(
-            `SELECT ws.exercise_name, ws.weight, ws.reps
+            `SELECT ws.exercise_name, ws.weight, ws.reps,
+                    ws.weight_left, ws.weight_right, ws.reps_left, ws.reps_right,
+                    ws.execution_mode
              FROM ${WORKOUT_SETS_TABLE} ws
              JOIN ${WORKOUTS_TABLE} w ON w.id = ws.workout_id
              WHERE w.user_id = ?
@@ -226,8 +274,21 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
             exercise_name: string;
             weight: number | null;
             reps: number | null;
+            weight_left: number | null;
+            weight_right: number | null;
+            reps_left: number | null;
+            reps_right: number | null;
+            execution_mode: string | null;
           }[]) {
-            const e1rm = estimateOneRepMax(row.weight, row.reps);
+            // Weaker-side estimate for unilateral rows (see computePRFlags).
+            const e1rm =
+              row.execution_mode === 'UNILATERAL'
+                ? estimateUnilateralOneRepMax(
+                    row.weight_left ?? row.weight_right ?? row.weight,
+                    row.reps_left,
+                    row.reps_right
+                  )
+                : estimateOneRepMax(row.weight, row.reps);
             if (e1rm !== null && e1rm > (records[row.exercise_name] ?? 0)) {
               records[row.exercise_name] = e1rm;
             }
@@ -347,6 +408,9 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                 if (field === 'setType') {
                   return { ...entry, setType: value as SetType };
                 }
+                if (field === 'executionMode') {
+                  return { ...entry, executionMode: value as ExecutionMode };
+                }
                 const numeric =
                   value === null || value === undefined || value === ''
                     ? null
@@ -357,6 +421,47 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
               get().personalRecords[exercise.name] ?? 0
             ),
           })),
+        });
+      },
+
+      setExecutionMode: (exerciseId, mode) => {
+        set({
+          exercises: mapExercise(get().exercises, exerciseId, (exercise) => {
+            if (exercise.executionMode === mode) return exercise;
+            return {
+              ...exercise,
+              executionMode: mode,
+              sets: computePRFlags(
+                exercise.sets.map((entry) => {
+                  if (mode === 'UNILATERAL') {
+                    // Carry bilateral values into both sides so nothing the
+                    // athlete already typed is lost; `reps` is then unused.
+                    const side = entry.reps;
+                    return {
+                      ...entry,
+                      executionMode: mode,
+                      repsLeft: entry.repsLeft ?? side,
+                      repsRight: entry.repsRight ?? side,
+                      weightLeft: entry.weightLeft ?? entry.weight,
+                      weightRight: entry.weightRight ?? entry.weight,
+                    };
+                  }
+                  // Back to bilateral: keep the weaker side's rep count (the
+                  // honest bilateral equivalent) and the shared weight.
+                  const sides = [entry.repsLeft, entry.repsRight].filter(
+                    (r): r is number => r !== null
+                  );
+                  return {
+                    ...entry,
+                    executionMode: mode,
+                    reps: entry.reps ?? (sides.length > 0 ? Math.min(...sides) : null),
+                    weight: entry.weight ?? entry.weightLeft ?? entry.weightRight,
+                  };
+                }),
+                get().personalRecords[exercise.name] ?? 0
+              ),
+            };
+          }),
         });
       },
 
@@ -487,10 +592,25 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                 // Skip sets the athlete never touched — they carry no data and
                 // would just be noise rows in the history.
                 if (isSetEmpty(entry)) continue;
+                // Unilateral sets persist the split columns plus a shared
+                // weight and a summed `reps` so legacy volume queries (which
+                // read weight * reps) keep counting the real work done.
+                const unilateral = (entry.executionMode ?? 'BILATERAL') === 'UNILATERAL';
+                const weightLeft = unilateral ? entry.weightLeft ?? entry.weight : null;
+                const weightRight = unilateral ? entry.weightRight ?? entry.weight : null;
+                const repsLeft = unilateral ? entry.repsLeft : null;
+                const repsRight = unilateral ? entry.repsRight : null;
+                const repsTotal = unilateral
+                  ? repsLeft === null && repsRight === null
+                    ? null
+                    : (repsLeft ?? 0) + (repsRight ?? 0)
+                  : entry.reps;
                 await tx.execute(
                   `INSERT INTO ${WORKOUT_SETS_TABLE}
-                     (id, workout_id, exercise_name, wger_id, order_index, set_number, set_type, weight, reps, rpe, is_completed, attachment, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                     (id, workout_id, exercise_name, wger_id, order_index, set_number, set_type,
+                      weight, reps, weight_left, weight_right, reps_left, reps_right,
+                      execution_mode, rpe, is_completed, attachment, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                   [
                     entry.id,
                     workoutId,
@@ -500,7 +620,12 @@ export const useWorkoutSessionStore = create<WorkoutSessionStore>()(
                     entry.setIndex,
                     entry.setType,
                     entry.weight,
-                    entry.reps,
+                    repsTotal,
+                    weightLeft,
+                    weightRight,
+                    repsLeft,
+                    repsRight,
+                    entry.executionMode ?? 'BILATERAL',
                     entry.rpe,
                     entry.isCompleted ? 1 : 0,
                     exercise.attachment ?? null,

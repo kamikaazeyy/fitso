@@ -54,6 +54,12 @@ model WorkoutSet {
   setType      String   @default("NORMAL")
   weight       Decimal  @db.Decimal(7,2) @default(0)
   reps         Int      @default(0)
+  // Unilateral tracking — null on bilateral rows.
+  weightLeft   Decimal? @db.Decimal(7,2)
+  weightRight  Decimal? @db.Decimal(7,2)
+  repsLeft     Int?
+  repsRight    Int?
+  executionMode String  @default("BILATERAL")
   rpe          Decimal? @db.Decimal(3,1)
   isCompleted  Boolean  @default(true)
   attachment   String?
