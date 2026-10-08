@@ -278,13 +278,16 @@ export default function WorkoutDetailScreen() {
       groups.reduce(
         (sum, group) =>
           sum +
-          group.sets.reduce(
-            (s, set) =>
-              set.isCompleted
-                ? s + (parseWeightInput(set.weight, unit) ?? 0) * (parseInt(set.reps, 10) || 0)
-                : s,
-            0
-          ),
+          group.sets.reduce((s, set) => {
+            if (!set.isCompleted) return s;
+            // `reps` is a display string ("8L · 12R") for unilateral sets —
+            // use the raw per-side numbers, not parseInt on the label.
+            const reps =
+              set.executionMode === 'UNILATERAL'
+                ? (set.repsLeft ?? 0) + (set.repsRight ?? 0)
+                : parseInt(set.reps, 10) || 0;
+            return s + (parseWeightInput(set.weight, unit) ?? 0) * reps;
+          }, 0),
         0
       ),
     [groups, unit]
@@ -365,7 +368,16 @@ export default function WorkoutDetailScreen() {
         for (const group of groups) {
           for (const set of group.sets) {
             const weight = parseWeightInput(set.weight, unit);
-            const reps = set.reps.trim() === '' ? null : parseInt(set.reps, 10);
+            // Unilateral `reps` is a display string — recompute the stored
+            // summed value from the per-side fields instead of parsing it.
+            const reps =
+              set.executionMode === 'UNILATERAL'
+                ? set.repsLeft === null && set.repsRight === null
+                  ? null
+                  : (set.repsLeft ?? 0) + (set.repsRight ?? 0)
+                : set.reps.trim() === ''
+                  ? null
+                  : parseInt(set.reps, 10);
             const rpe = set.rpe.trim() === '' ? null : parseFloat(set.rpe);
             if (set.isNew) {
               await tx.execute(
