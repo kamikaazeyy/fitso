@@ -10,6 +10,12 @@ export interface WorkoutSet {
   setType: string;
   weightKg: number;
   reps: number;
+  /** Per-side values — only set when executionMode is UNILATERAL. */
+  weightLeft: number | null;
+  weightRight: number | null;
+  repsLeft: number | null;
+  repsRight: number | null;
+  executionMode: string;
   rpe: number | null;
   completed: boolean;
   attachment: string | null;
@@ -47,6 +53,11 @@ interface WorkoutSetRow {
   set_type: string | null;
   weight: number | null;
   reps: number | null;
+  weight_left: number | null;
+  weight_right: number | null;
+  reps_left: number | null;
+  reps_right: number | null;
+  execution_mode: string | null;
   rpe: number | null;
   is_completed: number;
   attachment: string | null;
@@ -67,7 +78,9 @@ export function useWorkouts(limit = 50, offset = 0) {
     [limit, offset]
   );
   const setsResult = useQuery<WorkoutSetRow>(
-    `SELECT id, workout_id, exercise_name, wger_id, set_number, set_type, weight, reps, rpe, is_completed, attachment
+    `SELECT id, workout_id, exercise_name, wger_id, set_number, set_type, weight, reps,
+            weight_left, weight_right, reps_left, reps_right, execution_mode,
+            rpe, is_completed, attachment
      FROM workout_sets
      ORDER BY order_index ASC, set_number ASC`
   );
@@ -90,6 +103,11 @@ export function useWorkouts(limit = 50, offset = 0) {
         setType: s.set_type ?? 'NORMAL',
         weightKg: s.weight ?? 0,
         reps: s.reps ?? 0,
+        weightLeft: s.weight_left ?? null,
+        weightRight: s.weight_right ?? null,
+        repsLeft: s.reps_left ?? null,
+        repsRight: s.reps_right ?? null,
+        executionMode: s.execution_mode ?? 'BILATERAL',
         rpe: s.rpe ?? null,
         completed: s.is_completed === 1,
         attachment: s.attachment ?? null,

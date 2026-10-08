@@ -102,8 +102,26 @@ describe('finishWorkout (offline)', () => {
     await store.getState().finishWorkout();
 
     const [first] = insertsInto(db, WORKOUT_SETS_TABLE);
-    const [, , exerciseName, wgerId, orderIndex, setNumber, setType, weight, reps, rpe, isCompleted, attachment, createdAt] =
-      first.params;
+    const [
+      ,
+      ,
+      exerciseName,
+      wgerId,
+      orderIndex,
+      setNumber,
+      setType,
+      weight,
+      reps,
+      weightLeft,
+      weightRight,
+      repsLeft,
+      repsRight,
+      executionMode,
+      rpe,
+      isCompleted,
+      attachment,
+      createdAt,
+    ] = first.params;
 
     expect(exerciseName).toBe('Exercise 1');
     expect(wgerId).toBeNull();
@@ -114,11 +132,56 @@ describe('finishWorkout (offline)', () => {
     expect(setType).toBe('NORMAL');
     expect(weight).toBe(80);
     expect(reps).toBe(10);
+    // Bilateral rows leave the split columns null and default the mode.
+    expect(weightLeft).toBeNull();
+    expect(weightRight).toBeNull();
+    expect(repsLeft).toBeNull();
+    expect(repsRight).toBeNull();
+    expect(executionMode).toBe('BILATERAL');
     expect(rpe).toBeNull();
     expect(isCompleted).toBe(1);
     expect(attachment).toBeNull();
     expect(typeof createdAt).toBe('string');
     expect(Number.isNaN(Date.parse(createdAt as string))).toBe(false);
+  });
+
+  it('persists unilateral sets with per-side columns and a summed reps column', async () => {
+    store.getState().startWorkout();
+    store.getState().addExercise({ id: 'ex-db-press', name: 'Dumbbell Incline Press' });
+    store.getState().setExecutionMode('ex-db-press', 'UNILATERAL');
+    const setId = store.getState().exercises[0].sets[0].id;
+    store.getState().updateSet('ex-db-press', setId, 'weight', 20);
+    store.getState().updateSet('ex-db-press', setId, 'repsLeft', 8);
+    store.getState().updateSet('ex-db-press', setId, 'repsRight', 12);
+    store.getState().toggleSetComplete('ex-db-press', setId);
+
+    await store.getState().finishWorkout();
+
+    const [insert] = insertsInto(db, WORKOUT_SETS_TABLE);
+    const [
+      ,
+      ,
+      ,
+      ,
+      ,
+      ,
+      ,
+      weight,
+      reps,
+      weightLeft,
+      weightRight,
+      repsLeft,
+      repsRight,
+      executionMode,
+    ] = insert.params;
+
+    expect(weight).toBe(20);
+    expect(reps).toBe(20); // 8 + 12 — keeps weight*reps volume queries correct
+    expect(weightLeft).toBe(20);
+    expect(weightRight).toBe(20);
+    expect(repsLeft).toBe(8);
+    expect(repsRight).toBe(12);
+    expect(executionMode).toBe('UNILATERAL');
   });
 
   it('groups sets by exercise order and does not persist untouched empty sets', async () => {

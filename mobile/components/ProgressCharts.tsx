@@ -136,6 +136,86 @@ export function VolumeBarChart({ data }: { data: VolumePoint[] }) {
   );
 }
 
+export interface SideVolumePoint {
+  label: string;
+  left: number;
+  right: number;
+}
+
+/** Side-by-side bars of Left vs Right volume per session, oldest → newest. */
+export function SideVolumeBarChart({ data }: { data: SideVolumePoint[] }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const width = Math.max(280, screenWidth - 64);
+  const plotW = width - PAD_L - PAD_R;
+  const plotH = CHART_H - PAD_T - PAD_B;
+  const max = niceMax(Math.max(0, ...data.flatMap((d) => [d.left, d.right])));
+  const ticks = [0, 1, 2];
+  const slot = data.length > 0 ? plotW / data.length : plotW;
+  const barW = Math.min(14, slot * 0.3);
+  const labelEvery = Math.max(1, Math.ceil(data.length / 5));
+
+  return (
+    <View>
+      <View className="flex-row mb-2">
+        <View className="flex-row items-center mr-4">
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.cyan }} />
+          <Text className="text-[#A0A0A0] text-xs ml-1.5">Left</Text>
+        </View>
+        <View className="flex-row items-center">
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.cta }} />
+          <Text className="text-[#A0A0A0] text-xs ml-1.5">Right</Text>
+        </View>
+      </View>
+      <Svg width={width} height={CHART_H}>
+        <Gridlines width={width} ticks={ticks} />
+        <YAxisLabels ticks={ticks} min={0} max={max} />
+        {data.map((d, i) => {
+          const hL = Math.max(2, (d.left / max) * plotH);
+          const hR = Math.max(2, (d.right / max) * plotH);
+          const baseX = PAD_L + slot * i + (slot - barW * 2 - 2) / 2;
+          return (
+            <React.Fragment key={i}>
+              <Rect
+                x={baseX}
+                y={PAD_T + plotH - hL}
+                width={barW}
+                height={hL}
+                rx={3}
+                fill={colors.cyan}
+              />
+              <Rect
+                x={baseX + barW + 2}
+                y={PAD_T + plotH - hR}
+                width={barW}
+                height={hR}
+                rx={3}
+                fill={colors.cta}
+              />
+            </React.Fragment>
+          );
+        })}
+        {data.map((d, i) =>
+          i % labelEvery === 0 ? (
+            <SvgText
+              key={`l${i}`}
+              x={PAD_L + slot * i + slot / 2}
+              y={CHART_H - 6}
+              fontSize={9}
+              fill={LABEL}
+              textAnchor="middle"
+            >
+              {d.label}
+            </SvgText>
+          ) : null
+        )}
+      </Svg>
+      {data.length === 0 && (
+        <EmptyOverlay message="No unilateral sessions yet — log sets in Unilateral mode." />
+      )}
+    </View>
+  );
+}
+
 export interface OverloadSeries {
   name: string;
   color: string;

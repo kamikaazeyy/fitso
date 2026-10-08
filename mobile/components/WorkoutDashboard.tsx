@@ -8,8 +8,8 @@ import { useQuery } from '@powersync/react-native';
 import { CUSTOM_EXERCISES_TABLE, EXERCISE_CACHE_TABLE } from '@/src/db/AppSchema';
 import type { LoadableStatus } from '@/hooks/useLoadableData';
 import type { WorkoutWithSets } from '@/src/hooks/useWorkouts';
-import { estimateOneRepMax } from '@/src/utils/oneRepMax';
 import { buildOverloadSeries, workoutReps, workoutVolume } from '@/src/utils/trainingStats';
+import { setE1rm, weakerSideReps } from '@/src/utils/unilateralStats';
 import { useSettingsStore } from '@/src/store/useSettingsStore';
 import { displayWeight } from '@/src/utils/units';
 import { colors } from '@/constants/theme';
@@ -76,8 +76,13 @@ export function WorkoutDashboard({ data, status, error }: WorkoutDashboardProps)
       for (const s of w.sets) {
         if (!s.completed || s.setType !== 'NORMAL') continue;
         const weightKg = Number(s.weightKg) || 0;
-        const reps = Number(s.reps) || 0;
-        const e1rm = estimateOneRepMax(weightKg, reps);
+        // Unilateral rows badge the weaker side (min reps), matching the
+        // weaker-side e1RM they were judged on.
+        const reps =
+          s.executionMode === 'UNILATERAL'
+            ? weakerSideReps(s) ?? 0
+            : Number(s.reps) || 0;
+        const e1rm = setE1rm(s);
         if (e1rm === null) continue;
         const best = exerciseBestSet[s.exerciseName];
         if (!best || e1rm > best.e1rm) {

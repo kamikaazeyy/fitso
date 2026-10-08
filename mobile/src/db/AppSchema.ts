@@ -79,6 +79,13 @@ const workout_sets = new Table(
     set_type: column.text,
     weight: column.real,
     reps: column.integer,
+    // Unilateral tracking: per-side values. Null on bilateral rows — legacy
+    // sets stay BILATERAL and keep using `weight`/`reps`.
+    weight_left: column.real,
+    weight_right: column.real,
+    reps_left: column.integer,
+    reps_right: column.integer,
+    execution_mode: column.text,
     rpe: column.real,
     is_completed: column.integer,
     attachment: column.text,
