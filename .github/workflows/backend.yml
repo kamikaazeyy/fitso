@@ -59,6 +59,24 @@ jobs:
           oauth-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
           tags: tag:ci
 
+      - name: Verify server reachability
+        env:
+          DEPLOY_HOST: ${{ secrets.SERVER_HOST }}
+          DEPLOY_PORT: ${{ secrets.SERVER_SSH_PORT || '22' }}
+        run: |
+          echo "== tailscale status =="
+          tailscale status
+          echo "== tailscale ping =="
+          tailscale ping -c 3 --timeout 10s "$DEPLOY_HOST" \
+            || echo "WARNING: tailscale ping failed — is DEPLOY_HOST a Tailscale IP/name?"
+          echo "== TCP connect to $DEPLOY_HOST:$DEPLOY_PORT =="
+          if nc -zv -w 5 "$DEPLOY_HOST" "$DEPLOY_PORT"; then
+            echo "Reachable"
+          else
+            echo "ERROR: cannot reach $DEPLOY_HOST:$DEPLOY_PORT over the tailnet"
+            exit 1
+          fi
+
       - name: Write deploy key
         env:
           SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}

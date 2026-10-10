@@ -5,3 +5,6 @@ node_modules
 
 # Postgres data volume (mounted from /opt/fitso/data)
 data/
+
+# Archify generated diagrams (local artifacts)
+.archify/
