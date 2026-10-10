@@ -1,0 +1,18 @@
+name = "fitso-api"
+main = "src/index.js"
+compatibility_date = "2025-10-01"
+compatibility_flags = ["nodejs_compat"]
+# Note: no [limits] cpu_ms — not settable on the Free plan. Password hashing
+# uses PBKDF2 via WebCrypto (native, off-thread) so it doesn't consume the
+# CPU-time allowance the way bcryptjs would.
+
+# Created via: wrangler hyperdrive create fitso-supabase --connection-string <supabase transaction-pooler url>
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "2a6c9f302628495ebf00951020c45268"
+
+[vars]
+JWT_AUDIENCE = "powersync"
+JWT_KEY_ID = "fitso-jwt-key-1"
+SESSION_TOKEN_TTL_SECONDS = "604800"
+SYNC_TOKEN_TTL_SECONDS = "86400"

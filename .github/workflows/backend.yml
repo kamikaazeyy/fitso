@@ -4,165 +4,86 @@ on:
   push:
     branches: [main]
     paths:
-      - 'server/**'
+      - 'server/worker/**'
+      - 'server/prisma/**'
       - '.github/workflows/backend.yml'
   pull_request:
     branches: [main]
     paths:
-      - 'server/**'
+      - 'server/worker/**'
+      - 'server/prisma/**'
+  workflow_dispatch: {}
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
-  build-and-push:
+  # Bundles the Worker and validates the Prisma schema. Runs on every PR and
+  # push — no secrets required, nothing is deployed.
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        if: github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/worker/package-lock.json
 
-      - name: Build and push backend image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./server
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/fitso-backend:${{ github.sha }}
-            ghcr.io/${{ github.repository_owner }}/fitso-backend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Install worker deps
+        working-directory: server/worker
+        run: npm ci
 
+      - name: Bundle check (no deploy)
+        working-directory: server/worker
+        run: npx wrangler deploy --dry-run --outdir dist
+
+      - name: Validate Prisma schema
+        working-directory: server
+        run: |
+          npm ci --ignore-scripts
+          npx prisma validate
+
+  # Pushes the schema to Supabase, then deploys fitso-api to Cloudflare
+  # Workers. Schema goes first so the Worker never ships code that expects
+  # columns the database doesn't have yet.
   deploy:
-    needs: build-and-push
-    if: github.ref == 'refs/heads/main'
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          oauth-client-id: ${{ secrets.TAILSCALE_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_CLIENT_SECRET }}
-          tags: tag:ci
+          node-version: 20
+          cache: npm
+          cache-dependency-path: server/worker/package-lock.json
 
-      - name: Verify server reachability
+      - name: Push Prisma schema to Supabase
+        working-directory: server
         env:
-          DEPLOY_HOST: ${{ secrets.SERVER_HOST }}
-          DEPLOY_PORT: ${{ secrets.SERVER_SSH_PORT || '22' }}
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
         run: |
-          echo "== tailscale status =="
-          tailscale status
-          echo "== tailscale ping =="
-          tailscale ping -c 3 --timeout 10s "$DEPLOY_HOST" \
-            || echo "WARNING: tailscale ping failed — is DEPLOY_HOST a Tailscale IP/name?"
-          echo "== TCP connect to $DEPLOY_HOST:$DEPLOY_PORT =="
-          if nc -zv -w 5 "$DEPLOY_HOST" "$DEPLOY_PORT"; then
-            echo "Reachable"
-          else
-            echo "ERROR: cannot reach $DEPLOY_HOST:$DEPLOY_PORT over the tailnet"
-            exit 1
+          if [ -z "$DATABASE_URL" ]; then
+            echo "SUPABASE_DATABASE_URL secret not set — skipping schema push"
+            exit 0
           fi
+          npm ci --ignore-scripts
+          npx prisma db push --skip-generate
 
-      - name: Write deploy key
+      - name: Install worker deps
+        working-directory: server/worker
+        run: npm ci
+
+      - name: Deploy fitso-api to Cloudflare Workers
+        working-directory: server/worker
+        run: npx wrangler deploy
         env:
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          # The secret may be a raw PEM key or base64-encoded.
-          # Try base64 decode first; if it fails, write the value as-is.
-          if printf '%s' "$SSH_KEY" | base64 -d 2>/dev/null > ~/.ssh/deploy_key.tmp; then
-            mv ~/.ssh/deploy_key.tmp ~/.ssh/deploy_key
-            echo "Wrote base64-decoded key"
-          else
-            rm -f ~/.ssh/deploy_key.tmp
-            printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-            echo "Wrote raw key"
-          fi
-          chmod 600 ~/.ssh/deploy_key
-          echo "Key file: $(wc -l < ~/.ssh/deploy_key) lines, $(wc -c < ~/.ssh/deploy_key) bytes"
-          head -1 ~/.ssh/deploy_key
-          ls -l ~/.ssh/deploy_key
-
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.2.5
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_OWNER: ${{ github.repository_owner }}
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key_path: /home/runner/.ssh/deploy_key
-          port: ${{ secrets.SERVER_SSH_PORT || '22' }}
-          envs: GHCR_TOKEN,GHCR_OWNER,GITHUB_SHA
-          script: |
-            set -e
-
-            # Log into GHCR to pull the pre-built backend image
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_OWNER" --password-stdin
-
-            # Update the checkout first so config changes (docker-compose.yml,
-            # Caddyfile, sync-config.yaml) are in place before services restart.
-            cd /home/kamikaazeyy/fitso
-            git fetch origin main && git reset --hard origin/main || \
-              echo "WARNING: git pull failed — deploying with stale config (check .git ownership)"
-
-            cd /home/kamikaazeyy/fitso/server
-
-            # Pull the latest backend image from GHCR
-            docker compose pull backend
-
-            # Start/restart all services.
-            # Postgres and PowerSync are already running (data persists in volumes);
-            # this just picks up the new backend image and any config changes.
-            docker compose up -d
-
-            # Wait for Postgres to be healthy
-            echo "Waiting for Postgres..."
-            for i in $(seq 1 30); do
-              if docker exec fitso-postgres pg_isready -U fitso -d fitso >/dev/null 2>&1; then
-                echo "Postgres is healthy"
-                break
-              fi
-              sleep 2
-            done
-
-            # Ensure the PowerSync publication exists (idempotent)
-            docker exec fitso-postgres psql -U fitso -d fitso -c \
-              "DO \$\$ BEGIN CREATE PUBLICATION powersync FOR ALL TABLES; EXCEPTION WHEN duplicate_object THEN null; END \$\$;" \
-              2>/dev/null || echo "Publication already exists or DB not ready"
-
-            # Run Prisma migrations inside the backend container so the
-            # schema stays in sync with the code. The backend container has
-            # prisma installed and DATABASE_URL set to the Docker network host.
-            docker exec fitso-backend npx prisma db push --skip-generate 2>/dev/null || \
-              echo "WARNING: prisma db push failed — schema may already be up to date"
-
-            # Restart PowerSync so it picks up any sync-config changes
-            docker compose restart powersync
-
-            # Show final status
-            docker compose ps
-
-            # Auto-trigger a preview APK mirror build on the monitoring dashboard.
-            # Non-fatal: the deploy already succeeded by this point — a git
-            # permission issue or a down dashboard must not fail the job.
-            cd /home/kamikaazeyy/fitso
-            PAYLOAD=$(printf '{"profile":"preview","message":"Auto mirror after main deploy: %s"}' "$GITHUB_SHA")
-            curl -fsS -X POST http://localhost:3000/api/builds \
-              -H 'Content-Type: application/json' \
-              -d "$PAYLOAD" \
-              || echo "WARNING: Failed to trigger APK mirror (is monitoring-dashboard running?)"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Local artifacts — connection strings (contain DB password) and tail logs
+tail.log
+.conn-*

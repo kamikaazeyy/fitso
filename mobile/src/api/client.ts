@@ -4,8 +4,8 @@ import * as SecureStore from 'expo-secure-store';
 
 const fallbackBaseURL =
   Platform.OS === 'android'
-    ? 'http://10.0.2.2:3001'
-    : 'http://localhost:3001';
+    ? 'http://10.0.2.2:8787'
+    : 'http://localhost:8787';
 
 const baseURL = process.env.EXPO_PUBLIC_API_URL || fallbackBaseURL;
 

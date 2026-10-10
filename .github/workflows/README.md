@@ -2,31 +2,40 @@
 
 ## `backend.yml`
 
-Builds, pushes, and deploys the Fitso backend.
+Validates and deploys the Fitso API — a Cloudflare Worker (`fitso-api` in
+`server/worker/`) backed by Supabase Postgres through a Hyperdrive binding.
 
-- On every pull request to `main` that touches `server/**`: builds the Docker image (does not push).
-- On every push to `main` that touches `server/**`:
-  1. Builds and pushes `ghcr.io/kamikaazeyy/fitso-backend:latest` (and a SHA-tagged version) to GitHub Container Registry.
-  2. Connects the GitHub runner to your Tailnet using a Tailscale OAuth client.
-  3. SSHs into the server over Tailscale, pulls the new image, and restarts `backend` and `caddy`.
+- On every pull request to `main` that touches `server/worker/**` or
+  `server/prisma/**`: bundles the Worker with `wrangler deploy --dry-run` and
+  validates the Prisma schema. Nothing is deployed.
+- On every push to `main` that touches those paths (or via manual dispatch):
+  1. Runs `npx prisma db push` against Supabase so the schema stays in sync.
+  2. Runs `npx wrangler deploy` to ship the Worker.
 
 ### Required GitHub secrets
 
 | Secret | Description |
 |--------|-------------|
-| `TAILSCALE_CLIENT_ID` | Tailscale OAuth client ID. |
-| `TAILSCALE_CLIENT_SECRET` | Tailscale OAuth client secret. |
-| `SERVER_HOST` | Tailscale IP of this server, e.g. `100.123.46.76`. |
-| `SERVER_USER` | SSH user on the server (e.g. `root`). |
-| `SERVER_SSH_KEY` | Private half of an SSH key added to `~/.ssh/authorized_keys` on the server. |
-| `SERVER_SSH_PORT` | (Optional) SSH port. Defaults to `22`. |
+| `CLOUDFLARE_API_TOKEN` | API token with **Workers Scripts: Edit** on the account. Create at dash.cloudflare.com → My Profile → API Tokens. |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID (dashboard right sidebar). |
+| `SUPABASE_DATABASE_URL` | Postgres URL used by `prisma db push`. Use the Supabase **session pooler** (port 5432) or a direct connection — NOT the transaction pooler (port 6543) that Hyperdrive uses. Schema push is skipped if unset. |
 
-No separate GHCR token is required. The `deploy` job passes the built-in `GITHUB_TOKEN` to the server for a temporary GHCR login.
+Worker runtime secrets (`JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`) are stored in
+Cloudflare, not GitHub — see below.
 
-### One-time server setup
+### One-time Cloudflare setup
 
-1. Add the public SSH key to `/root/.ssh/authorized_keys` (or whichever `SERVER_USER` you use).
-2. Ensure the Tailscale OAuth client has these scopes:
-   - **Devices → Core → Write**
-   - **Auth keys → Write**
-   And the ACL tag `tag:ci` is allowed.
+```bash
+cd server/worker
+wrangler login                    # or export CLOUDFLARE_API_TOKEN
+wrangler secret put JWT_PRIVATE_KEY   # paste contents of server/keys/jwt-private.pem
+wrangler secret put JWT_PUBLIC_KEY    # paste contents of server/keys/jwt-public.pem
+```
+
+The Hyperdrive binding (`HYPERDRIVE` → Supabase transaction pooler) is already
+configured in `wrangler.toml` and requires no CI secrets.
+
+## `mobile-ota.yml`
+
+Publishes an EAS Update (OTA) for the mobile app. Unrelated to the backend
+deploy — see the file header for details.

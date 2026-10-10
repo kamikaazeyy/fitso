@@ -1,0 +1,17 @@
+{
+  "name": "fitso-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "postgres": "^3.4.7"
+  },
+  "devDependencies": {
+    "wrangler": "^4.86.0"
+  }
+}

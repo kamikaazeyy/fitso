@@ -79,6 +79,6 @@ jobs:
           # eas update does not read eas.json build-profile env — these must be
           # supplied explicitly so EXPO_PUBLIC_* vars get inlined into the
           # bundle (mobile/.env is gitignored and absent in CI).
-          EXPO_PUBLIC_API_URL: http://100.70.218.115
-          EXPO_PUBLIC_POWERSYNC_URL: http://100.70.218.115/powersync
+          EXPO_PUBLIC_API_URL: https://fitso-api.pranavmehrotra528.workers.dev
+          EXPO_PUBLIC_POWERSYNC_URL: https://6aca8b963b1803753bd09457.powersync.journeyapps.com
         run: eas update --branch preview --platform android --message "$UPDATE_MESSAGE" --non-interactive

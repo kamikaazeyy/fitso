@@ -9,8 +9,8 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://10.0.2.2:3001",
-        "EXPO_PUBLIC_POWERSYNC_URL": "http://10.0.2.2:8080"
+        "EXPO_PUBLIC_API_URL": "http://10.0.2.2:8787",
+        "EXPO_PUBLIC_POWERSYNC_URL": "https://6aca8b963b1803753bd09457.powersync.journeyapps.com"
       }
     },
     "preview": {
@@ -20,15 +20,15 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://100.70.218.115",
-        "EXPO_PUBLIC_POWERSYNC_URL": "http://100.70.218.115/powersync"
+        "EXPO_PUBLIC_API_URL": "https://fitso-api.pranavmehrotra528.workers.dev",
+        "EXPO_PUBLIC_POWERSYNC_URL": "https://6aca8b963b1803753bd09457.powersync.journeyapps.com"
       }
     },
     "production": {
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://100.70.218.115",
-        "EXPO_PUBLIC_POWERSYNC_URL": "http://100.70.218.115/powersync"
+        "EXPO_PUBLIC_API_URL": "https://fitso-api.pranavmehrotra528.workers.dev",
+        "EXPO_PUBLIC_POWERSYNC_URL": "https://6aca8b963b1803753bd09457.powersync.journeyapps.com"
       }
     }
   }

@@ -1,11 +1,10 @@
-import { Platform } from 'react-native';
 import type { PowerSyncBackendConnector, PowerSyncCredentials } from '@powersync/react-native';
 import { client } from '@/src/api/client';
 import { decodeJwtExp } from '@/src/utils/jwt';
 
 export const SYNC_ENDPOINT =
   process.env.EXPO_PUBLIC_POWERSYNC_URL ||
-  (Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080');
+  'https://6aca8b963b1803753bd09457.powersync.journeyapps.com';
 
 export async function isSyncServerReachable(): Promise<boolean> {
   try {
